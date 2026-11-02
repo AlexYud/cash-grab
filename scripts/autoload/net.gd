@@ -36,7 +36,31 @@ var debug_bleed_time := -1.0 ## tests: override GameConfig.BLEED_OUT_TIME when >
 var debug_god := false ## tests: players take no damage (lets bots finish stability soaks)
 
 
+var steam: SteamLobby ## optional Steam transport; see steam_lobby.gd
+
+
+## Steam path: the SteamLobby node built the peer, Net takes over exactly like host_game / join_game.
+func adopt_host_peer(peer: MultiplayerPeer, player_name: String) -> void:
+	multiplayer.multiplayer_peer = peer
+	local_name = player_name
+	roster = {1: {"name": player_name, "color": 0}}
+	_set_phase(Phase.LOBBY)
+	roster_changed.emit()
+
+
+func adopt_client_peer(peer: MultiplayerPeer, player_name: String) -> void:
+	multiplayer.multiplayer_peer = peer
+	local_name = player_name
+	get_tree().create_timer(20.0).timeout.connect(func() -> void:
+		if multiplayer.multiplayer_peer == peer and peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTING:
+			leave("")
+			join_failed.emit("Could not reach the host through Steam. Is the host still in the lobby, and is Steam online?"))
+
+
 func _ready() -> void:
+	steam = SteamLobby.new()
+	steam.name = "SteamLobby"
+	add_child(steam)
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	multiplayer.connected_to_server.connect(_on_connected_to_server)
@@ -161,10 +185,11 @@ func _close_upnp() -> void:
 
 func leave(reason: String = "") -> void:
 	var peer := multiplayer.multiplayer_peer
-	if peer is ENetMultiplayerPeer:
+	if peer != null and not (peer is OfflineMultiplayerPeer):
 		peer.close()
 	multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
 	_close_upnp()
+	steam.leave()
 	roster.clear()
 	local_player = null
 	ui_blocking = false

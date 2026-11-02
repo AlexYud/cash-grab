@@ -13,7 +13,7 @@ const RATE := 12000
 const FRAME_SAMPLES := 480 ## 40 ms
 const FRAME_SEC := 0.04
 const HEAR_RANGE := 28.0
-const CHANNEL := 3 ## channels 0-2 are used by ENet/SceneMultiplayer internals; 3 keeps voice off their queues
+const CHANNEL := 0 ## default channel: the Steam peer has no channel support (unreliable packets never block anything anyway)
 const PREBUFFER := 0.1 ## seconds queued in the generator before we stop pushing
 
 enum Mode { OPEN, PTT, MUTED }

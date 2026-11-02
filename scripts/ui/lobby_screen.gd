@@ -66,7 +66,11 @@ func refresh() -> void:
 	var slots := Net.MAX_PLAYERS - ids.size()
 	for i in slots:
 		_rows.add_child(UiKit.label("   - open slot -", 20, UiKit.DIM.darkened(0.3)))
-	if Net.is_host():
+	if Net.steam.lobby_id != 0 and Net.is_host():
+		_info.text = "Hosting on Steam. Friends use \"Find lobbies\" in the main menu, or paste this lobby ID:\n%d" % Net.steam.lobby_id
+		_start.visible = true
+		_hint.text = "Start whenever everyone is in. Players can also join while a run is in progress."
+	elif Net.is_host():
 		var ips := ", ".join(Net.local_addresses())
 		_info.text = "You are hosting on port %d.\nSame network: %s\nOver the internet: %s" % [port, ips if ips != "" else "your IP", Net.upnp_status if Net.upnp_status != "" else "forward UDP %d on your router, or use a VPN" % port]
 		_start.visible = true
