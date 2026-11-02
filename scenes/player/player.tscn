@@ -1,0 +1,105 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/player/player.gd" id="1_gmlin"]
+[ext_resource type="Script" path="res://scripts/characters/puppet.gd" id="2_lvxji"]
+[ext_resource type="Script" path="res://scripts/player/player_weapons.gd" id="3_p47bc"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_75vfm"]
+radius = 0.38
+height = 1.76
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_0owmy"]
+shading_mode = 0
+albedo_color = Color(1, 0.85, 0.3, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_qek5x"]
+size = Vector3(0.05, 0.05, 1)
+
+[sub_resource type="SceneReplicationConfig" id="SceneReplicationConfig_5gtgg"]
+properties/0/path = NodePath(".:sync_pos")
+properties/0/spawn = true
+properties/0/replication_mode = 1
+properties/1/path = NodePath(".:sync_yaw")
+properties/1/spawn = true
+properties/1/replication_mode = 1
+properties/2/path = NodePath(".:sync_pitch")
+properties/2/spawn = true
+properties/2/replication_mode = 1
+properties/3/path = NodePath(".:sync_vel")
+properties/3/spawn = true
+properties/3/replication_mode = 1
+properties/4/path = NodePath(".:sync_flags")
+properties/4/spawn = true
+properties/4/replication_mode = 1
+properties/5/path = NodePath(".:sync_weapon")
+properties/5/spawn = true
+properties/5/replication_mode = 1
+
+[sub_resource type="SceneReplicationConfig" id="SceneReplicationConfig_h17s1"]
+properties/0/path = NodePath(".:hp")
+properties/0/spawn = true
+properties/0/replication_mode = 1
+properties/1/path = NodePath(".:status")
+properties/1/spawn = true
+properties/1/replication_mode = 1
+properties/2/path = NodePath(".:bleed_left")
+properties/2/spawn = true
+properties/2/replication_mode = 1
+properties/3/path = NodePath(".:revive_progress")
+properties/3/spawn = true
+properties/3/replication_mode = 1
+properties/4/path = NodePath(".:grabbed_by")
+properties/4/spawn = true
+properties/4/replication_mode = 1
+properties/5/path = NodePath(".:grabbing")
+properties/5/spawn = true
+properties/5/replication_mode = 1
+properties/6/path = NodePath(".:kills")
+properties/6/spawn = true
+properties/6/replication_mode = 1
+
+[node name="Player" type="CharacterBody3D" unique_id=886072677]
+script = ExtResource("1_gmlin")
+
+[node name="Collision" type="CollisionShape3D" parent="." unique_id=1185945105]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.88, 0)
+shape = SubResource("CapsuleShape3D_75vfm")
+
+[node name="Visual" type="Node3D" parent="." unique_id=454179698]
+script = ExtResource("2_lvxji")
+
+[node name="Head" type="Node3D" parent="." unique_id=455423616]
+
+[node name="Camera3D" type="Camera3D" parent="Head" unique_id=1379055268]
+fov = 78.0
+
+[node name="Weapons" type="Node" parent="." unique_id=747445806]
+script = ExtResource("3_p47bc")
+
+[node name="NameTag" type="Label3D" parent="." unique_id=884144971]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.15, 0)
+pixel_size = 0.006
+billboard = 1
+no_depth_test = true
+text = "Player"
+font_size = 40
+
+[node name="VoiceOut" type="AudioStreamPlayer3D" parent="." unique_id=1453279897]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.6, 0)
+unit_size = 6.0
+max_distance = 30.0
+
+[node name="GrabLine" type="MeshInstance3D" parent="." unique_id=702102844]
+top_level = true
+visible = false
+material_override = SubResource("StandardMaterial3D_0owmy")
+cast_shadow = 0
+mesh = SubResource("BoxMesh_qek5x")
+
+[node name="TransformSync" type="MultiplayerSynchronizer" parent="." unique_id=1579009707]
+replication_interval = 0.033
+replication_config = SubResource("SceneReplicationConfig_5gtgg")
+
+[node name="StateSync" type="MultiplayerSynchronizer" parent="." unique_id=145077108]
+replication_interval = 0.1
+replication_config = SubResource("SceneReplicationConfig_h17s1")

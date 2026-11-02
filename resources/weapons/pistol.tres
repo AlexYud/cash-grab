@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="WeaponData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/weapons/weapon_data.gd" id="1_wd"]
+
+[resource]
+script = ExtResource("1_wd")
+id = &"pistol"
+display_name = "Pistol"
+damage = 25.0
+pellets = 1
+spread_deg = 0.4
+fire_interval = 0.2
+mag_size = 12
+reload_time = 1.2
+max_range = 70.0
+falloff_start = 15.0
+falloff_end = 45.0
+min_damage_frac = 0.5
+enemy_knockback = 1.0
+enemy_stagger = 0.0
+player_knockback = 1.5
+player_stagger = 0.0
+recoil_deg = 1.4
+switch_time = 0.3

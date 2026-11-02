@@ -1,0 +1,61 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/world/explosive_barrel.gd" id="1_djy2t"]
+
+[sub_resource type="CylinderShape3D" id="CylinderShape3D_bjvts"]
+height = 1.0
+radius = 0.42
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_as2xt"]
+albedo_color = Color(0.75, 0.14, 0.1, 1)
+roughness = 0.92
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_ktbbj"]
+top_radius = 0.4
+bottom_radius = 0.4
+height = 1.0
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_qw82t"]
+albedo_color = Color(0.95, 0.8, 0.15, 1)
+roughness = 0.92
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_o73or"]
+top_radius = 0.415
+bottom_radius = 0.415
+height = 0.1
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_2re4v"]
+top_radius = 0.415
+bottom_radius = 0.415
+height = 0.1
+
+[sub_resource type="SceneReplicationConfig" id="SceneReplicationConfig_6tk10"]
+properties/0/path = NodePath(".:alive")
+properties/0/spawn = true
+properties/0/replication_mode = 1
+
+[node name="Barrel" type="StaticBody3D" unique_id=1717933343]
+script = ExtResource("1_djy2t")
+
+[node name="Shape" type="CollisionShape3D" parent="." unique_id=142616881]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
+shape = SubResource("CylinderShape3D_bjvts")
+
+[node name="Mesh" type="MeshInstance3D" parent="." unique_id=1194628224]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
+material_override = SubResource("StandardMaterial3D_as2xt")
+mesh = SubResource("CylinderMesh_ktbbj")
+
+[node name="Band2" type="MeshInstance3D" parent="." unique_id=1673078958]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.2, 0)
+material_override = SubResource("StandardMaterial3D_qw82t")
+mesh = SubResource("CylinderMesh_o73or")
+
+[node name="Band8" type="MeshInstance3D" parent="." unique_id=646097790]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8, 0)
+material_override = SubResource("StandardMaterial3D_qw82t")
+mesh = SubResource("CylinderMesh_2re4v")
+
+[node name="Sync" type="MultiplayerSynchronizer" parent="." unique_id=494511459]
+replication_interval = 0.2
+replication_config = SubResource("SceneReplicationConfig_6tk10")

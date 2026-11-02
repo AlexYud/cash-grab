@@ -1,0 +1,58 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/main.gd" id="1_jyhfs"]
+[ext_resource type="PackedScene" path="res://scenes/world/saloon.tscn" id="2_tbgi4"]
+[ext_resource type="Script" path="res://scripts/world/saloon_level.gd" id="3_tefeu"]
+[ext_resource type="Script" path="res://scripts/world/wave_manager.gd" id="4_o6xl0"]
+
+[sub_resource type="SceneReplicationConfig" id="SceneReplicationConfig_tipki"]
+properties/0/path = NodePath(".:state")
+properties/0/spawn = true
+properties/0/replication_mode = 1
+properties/1/path = NodePath(".:wave")
+properties/1/spawn = true
+properties/1/replication_mode = 1
+properties/2/path = NodePath(".:enemies_alive")
+properties/2/spawn = true
+properties/2/replication_mode = 1
+properties/3/path = NodePath(".:to_spawn")
+properties/3/spawn = true
+properties/3/replication_mode = 1
+properties/4/path = NodePath(".:break_left")
+properties/4/spawn = true
+properties/4/replication_mode = 1
+
+[node name="Main" type="Node" unique_id=1065301289]
+script = ExtResource("1_jyhfs")
+
+[node name="World" type="Node3D" parent="." unique_id=2052089647]
+
+[node name="Level" type="Node3D" parent="World" unique_id=2020147783 instance=ExtResource("2_tbgi4")]
+script = ExtResource("3_tefeu")
+
+[node name="Players" type="Node3D" parent="World" unique_id=264346714]
+
+[node name="Enemies" type="Node3D" parent="World" unique_id=1722669626]
+
+[node name="Fx" type="Node3D" parent="World" unique_id=813586003]
+
+[node name="PlayerSpawner" type="MultiplayerSpawner" parent="World" unique_id=462911721]
+spawn_path = NodePath("../Players")
+
+[node name="EnemySpawner" type="MultiplayerSpawner" parent="World" unique_id=467515851]
+spawn_path = NodePath("../Enemies")
+
+[node name="WaveManager" type="Node" parent="World" unique_id=883120220]
+script = ExtResource("4_o6xl0")
+
+[node name="Sync" type="MultiplayerSynchronizer" parent="World/WaveManager" unique_id=554246705]
+replication_interval = 0.2
+replication_config = SubResource("SceneReplicationConfig_tipki")
+
+[node name="MenuCam" type="Camera3D" parent="." unique_id=964603629]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 9, 30)
+fov = 70.0
+far = 200.0
+
+[node name="UI" type="CanvasLayer" parent="." unique_id=2044677383]
+layer = 10
