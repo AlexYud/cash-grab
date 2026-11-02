@@ -34,6 +34,7 @@ var ui_blocking := false ## true while a menu has the mouse; the player stops re
 var sens_scale := 1.0 ## mouse sensitivity multiplier from the pause menu
 var debug_bleed_time := -1.0 ## tests: override GameConfig.BLEED_OUT_TIME when > 0
 var debug_god := false ## tests: players take no damage (lets bots finish stability soaks)
+var debug_snack_chance := -1.0 ## tests: force the snack drop chance (0..1) when >= 0
 
 
 var steam: SteamLobby ## optional Steam transport; see steam_lobby.gd

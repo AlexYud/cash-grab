@@ -8,6 +8,7 @@ var port := Net.DEFAULT_PORT
 var _rows: VBoxContainer
 var _info: Label
 var _start: Button
+var _copy: Button
 var _hint: Label
 
 
@@ -32,6 +33,11 @@ func _ready() -> void:
 	_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_hint.custom_minimum_size = Vector2(460, 0)
 	box.add_child(_hint)
+	_copy = UiKit.button("Copy lobby ID")
+	_copy.pressed.connect(func() -> void:
+		DisplayServer.clipboard_set(str(Net.steam.lobby_id))
+		_copy.text = "Copied! Paste it to your friend")
+	box.add_child(_copy)
 	_start = UiKit.button("Start game")
 	_start.pressed.connect(func() -> void: start_requested.emit())
 	box.add_child(_start)
@@ -47,6 +53,9 @@ func _ready() -> void:
 func refresh() -> void:
 	if _rows == null:
 		return
+	_copy.visible = Net.steam.lobby_id != 0 and Net.is_host()
+	if not _copy.visible:
+		_copy.text = "Copy lobby ID"
 	for c in _rows.get_children():
 		c.queue_free()
 	var ids := Net.roster.keys()

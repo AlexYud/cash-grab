@@ -48,58 +48,58 @@ properties/1/path = NodePath(".:repair_progress")
 properties/1/spawn = true
 properties/1/replication_mode = 1
 
-[node name="Barricade" type="Node3D" unique_id=759557739]
+[node name="Barricade" type="Node3D" unique_id=941530751]
 script = ExtResource("1_m70xl")
 
-[node name="Planks" type="Node3D" parent="." unique_id=72017275]
+[node name="Planks" type="Node3D" parent="." unique_id=1378575462]
 
-[node name="P0" type="MeshInstance3D" parent="Planks" unique_id=594713456]
+[node name="P0" type="MeshInstance3D" parent="Planks" unique_id=1630956796]
 transform = Transform3D(0.99880373, -0.048898924, 0, 0.048898924, 0.99880373, 0, 0, 0, 1, 0.024848398, 0.35, 0)
 material_override = SubResource("StandardMaterial3D_aokpu")
 mesh = SubResource("BoxMesh_k0kqe")
 
-[node name="P1" type="MeshInstance3D" parent="Planks" unique_id=227869751]
+[node name="P1" type="MeshInstance3D" parent="Planks" unique_id=2016857632]
 transform = Transform3D(0.99951214, -0.031232536, 0, 0.031232536, 0.99951214, 0, 0, 0, 1, 0.036038343, 0.85, 0)
 material_override = SubResource("StandardMaterial3D_bjm6a")
 mesh = SubResource("BoxMesh_fcydw")
 
-[node name="P2" type="MeshInstance3D" parent="Planks" unique_id=406517282]
+[node name="P2" type="MeshInstance3D" parent="Planks" unique_id=912273522]
 transform = Transform3D(0.99901724, -0.044322755, 0, 0.044322755, 0.99901724, 0, 0, 0, 1, -0.03642369, 1.35, 0)
 material_override = SubResource("StandardMaterial3D_nwbyx")
 mesh = SubResource("BoxMesh_hq1ij")
 
-[node name="P3" type="MeshInstance3D" parent="Planks" unique_id=1758857845]
+[node name="P3" type="MeshInstance3D" parent="Planks" unique_id=1433179608]
 transform = Transform3D(0.9998706, 0.016085895, 0, -0.016085895, 0.9998706, 0, 0, 0, 1, -0.05510828, 1.85, 0)
 material_override = SubResource("StandardMaterial3D_c27fe")
 mesh = SubResource("BoxMesh_rdpti")
 
-[node name="P4" type="MeshInstance3D" parent="Planks" unique_id=2066936454]
+[node name="P4" type="MeshInstance3D" parent="Planks" unique_id=1742186041]
 transform = Transform3D(0.9999946, -0.0032986393, 0, 0.0032986393, 0.9999946, 0, 0, 0, 1, 0.009505335, 2.35, 0)
 material_override = SubResource("StandardMaterial3D_itsqt")
 mesh = SubResource("BoxMesh_km2bm")
 
-[node name="Blocker" type="StaticBody3D" parent="." unique_id=311780611]
+[node name="Blocker" type="StaticBody3D" parent="." unique_id=1167511628]
 collision_layer = 8
 collision_mask = 0
 
-[node name="Shape" type="CollisionShape3D" parent="Blocker" unique_id=440940277]
+[node name="Shape" type="CollisionShape3D" parent="Blocker" unique_id=1630736804]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.35, 0)
 shape = SubResource("BoxShape3D_rx3bg")
 
-[node name="Slots" type="Node3D" parent="." unique_id=1552390484]
+[node name="Slots" type="Node3D" parent="." unique_id=1926587767]
 
-[node name="S0" type="Marker3D" parent="Slots" unique_id=617638552]
+[node name="S0" type="Marker3D" parent="Slots" unique_id=1327033821]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.1, 0, 1.2)
 
-[node name="S1" type="Marker3D" parent="Slots" unique_id=139998031]
+[node name="S1" type="Marker3D" parent="Slots" unique_id=1685888383]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.37, 0, 1.2)
 
-[node name="S2" type="Marker3D" parent="Slots" unique_id=1603874353]
+[node name="S2" type="Marker3D" parent="Slots" unique_id=275976556]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.37, 0, 1.2)
 
-[node name="S3" type="Marker3D" parent="Slots" unique_id=857214884]
+[node name="S3" type="Marker3D" parent="Slots" unique_id=241021070]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.1, 0, 1.2)
 
-[node name="Sync" type="MultiplayerSynchronizer" parent="." unique_id=1443665209]
+[node name="Sync" type="MultiplayerSynchronizer" parent="." unique_id=273649442]
 replication_interval = 0.1
 replication_config = SubResource("SceneReplicationConfig_wi7me")

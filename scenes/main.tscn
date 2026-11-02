@@ -22,37 +22,37 @@ properties/4/path = NodePath(".:break_left")
 properties/4/spawn = true
 properties/4/replication_mode = 1
 
-[node name="Main" type="Node" unique_id=1065301289]
+[node name="Main" type="Node" unique_id=122541145]
 script = ExtResource("1_jyhfs")
 
-[node name="World" type="Node3D" parent="." unique_id=2052089647]
+[node name="World" type="Node3D" parent="." unique_id=1129657885]
 
-[node name="Level" type="Node3D" parent="World" unique_id=2020147783 instance=ExtResource("2_tbgi4")]
+[node name="Level" type="Node3D" parent="World" unique_id=139923806 instance=ExtResource("2_tbgi4")]
 script = ExtResource("3_tefeu")
 
-[node name="Players" type="Node3D" parent="World" unique_id=264346714]
+[node name="Players" type="Node3D" parent="World" unique_id=190525649]
 
-[node name="Enemies" type="Node3D" parent="World" unique_id=1722669626]
+[node name="Enemies" type="Node3D" parent="World" unique_id=704561697]
 
-[node name="Fx" type="Node3D" parent="World" unique_id=813586003]
+[node name="Fx" type="Node3D" parent="World" unique_id=2070586422]
 
-[node name="PlayerSpawner" type="MultiplayerSpawner" parent="World" unique_id=462911721]
+[node name="PlayerSpawner" type="MultiplayerSpawner" parent="World" unique_id=572035703]
 spawn_path = NodePath("../Players")
 
-[node name="EnemySpawner" type="MultiplayerSpawner" parent="World" unique_id=467515851]
+[node name="EnemySpawner" type="MultiplayerSpawner" parent="World" unique_id=424304271]
 spawn_path = NodePath("../Enemies")
 
-[node name="WaveManager" type="Node" parent="World" unique_id=883120220]
+[node name="WaveManager" type="Node" parent="World" unique_id=1973647417]
 script = ExtResource("4_o6xl0")
 
-[node name="Sync" type="MultiplayerSynchronizer" parent="World/WaveManager" unique_id=554246705]
+[node name="Sync" type="MultiplayerSynchronizer" parent="World/WaveManager" unique_id=1967386560]
 replication_interval = 0.2
 replication_config = SubResource("SceneReplicationConfig_tipki")
 
-[node name="MenuCam" type="Camera3D" parent="." unique_id=964603629]
+[node name="MenuCam" type="Camera3D" parent="." unique_id=233817042]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 9, 30)
 fov = 70.0
 far = 200.0
 
-[node name="UI" type="CanvasLayer" parent="." unique_id=2044677383]
+[node name="UI" type="CanvasLayer" parent="." unique_id=1395945335]
 layer = 10

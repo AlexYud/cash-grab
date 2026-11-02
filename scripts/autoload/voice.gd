@@ -38,11 +38,41 @@ var _seq := 0
 var _hang := 0.0
 var _tone_phase := 0.0
 var _tone_acc := 0.0
+var master_gain := 1.0 ## "Voice volume" slider: everything you hear from teammates (0..2)
+var player_gains: Dictionary = {} ## teammate name -> their own 0..2 multiplier, remembered between sessions
 var _decode := PackedFloat32Array()
 var _streams := {} ## speaker peer id -> {queue: Array, primed: bool, last_seq: int}
 
 
+## Combined playback gain for one teammate (linear).
+func gain_for(player_name: String) -> float:
+	return master_gain * float(player_gains.get(player_name, 1.0))
+
+
+func set_master_gain(v: float) -> void:
+	master_gain = v
+	_save_gains()
+
+
+func set_player_gain(player_name: String, v: float) -> void:
+	player_gains[player_name] = v
+	_save_gains()
+
+
+func _save_gains() -> void:
+	var cfg := UiKit.load_settings()
+	cfg.set_value("voice", "master", master_gain)
+	for k in player_gains:
+		cfg.set_value("voice_players", k, player_gains[k])
+	cfg.save(UiKit.SETTINGS_PATH)
+
+
 func _ready() -> void:
+	var cfg := UiKit.load_settings()
+	master_gain = float(cfg.get_value("voice", "master", 1.0))
+	if cfg.has_section("voice_players"):
+		for k in cfg.get_section_keys("voice_players"):
+			player_gains[k] = float(cfg.get_value("voice_players", k))
 	_decode.resize(256)
 	for q in 256:
 		var y := q / 255.0 * 2.0 - 1.0
@@ -276,4 +306,4 @@ func _pump_playback() -> void:
 			s["primed"] = false # underrun: rebuild a small cushion
 		# soften the hard cut at max distance
 		var d := pl.global_position.distance_to(Net.local_player.global_position) if Net.local_player != null else 0.0
-		pl.voice_out.volume_db = 4.0 - 24.0 * smoothstep(HEAR_RANGE - 8.0, HEAR_RANGE, d)
+		pl.voice_out.volume_db = 4.0 + linear_to_db(maxf(gain_for(pl.player_name), 0.0001)) - 24.0 * smoothstep(HEAR_RANGE - 8.0, HEAR_RANGE, d)

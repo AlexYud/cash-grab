@@ -40,6 +40,7 @@ var revive_progress := 0.0
 var grabbed_by := 0 ## peer id of whoever is holding me (0 = nobody)
 var grabbing := 0 ## peer id I am holding
 var kills := 0
+var hugged := 0 ## how many Huggers are clinging to me (slows me down)
 
 # --- host-only bookkeeping ---
 var interact_kind: int = Interact.NONE
@@ -231,12 +232,13 @@ func _local_tick(delta: float) -> void:
 
 
 func _speed_multiplier() -> float:
+	var m := GameConfig.HUGGER_SLOW if hugged > 0 else 1.0
 	if grabbing != 0:
 		var t := Net.get_player(grabbing)
 		if t != null and t.status == Status.DOWNED:
-			return GameConfig.DRAG_SLOW
-		return GameConfig.GRAB_SLOW
-	return 1.0
+			return m * GameConfig.DRAG_SLOW
+		return m * GameConfig.GRAB_SLOW
+	return m
 
 
 func _tick_alive(delta: float) -> void:
@@ -247,7 +249,7 @@ func _tick_alive(delta: float) -> void:
 	_update_grab_input()
 
 	var wish := Basis(Vector3.UP, yaw) * Vector3(input.move.x, 0.0, input.move.y)
-	var sprinting := input.sprint and input.move.y < -0.1 and not input.fire_held and grabbing == 0 and not weapons.is_reloading()
+	var sprinting := input.sprint and input.move.y < -0.1 and not input.fire_held and grabbing == 0 and hugged == 0 and not weapons.is_reloading()
 	var speed := GameConfig.SPRINT_SPEED if sprinting else GameConfig.WALK_SPEED
 	speed *= _speed_multiplier()
 	var target := Vector2(wish.x, wish.z) * speed
@@ -265,7 +267,7 @@ func _tick_alive(delta: float) -> void:
 	velocity.z = h.y
 	if on_floor:
 		velocity.y = maxf(velocity.y, 0.0)
-		if input.jump and not staggered and grabbed_by == 0:
+		if input.jump and not staggered and grabbed_by == 0 and hugged == 0:
 			velocity.y = GameConfig.JUMP_VELOCITY
 	else:
 		velocity.y -= GameConfig.GRAVITY * delta
@@ -565,6 +567,13 @@ func _update_interactions() -> void:
 					prompt_text = "Hold [E] to repair barricade (%d/%d)" % [bar.boards, Barricade.MAX_BOARDS]
 					prompt_progress = bar.repair_progress
 					break
+	if kind == Interact.NONE and status == Status.ALIVE:
+		if hugged > 0:
+			prompt_text = "A Hugger has you! Shove it off [F] or shoot it"
+		elif grabbing == 0:
+			var gt := _find_grab_target()
+			if gt != null:
+				prompt_text = "Hold [G] to grab %s" % gt.player_name
 	var want_kind := kind if input.interact_held else Interact.NONE
 	var want_target := target if input.interact_held else 0
 	if want_kind != _sent_kind or want_target != _sent_target:
@@ -758,7 +767,15 @@ func srv_revive() -> void:
 
 
 ## Back on their feet at the end of a wave (or when the run restarts).
+func srv_heal(amount: int) -> bool:
+	if status != Status.ALIVE or hp >= GameConfig.PLAYER_MAX_HP:
+		return false
+	hp = mini(hp + amount, GameConfig.PLAYER_MAX_HP)
+	return true
+
+
 func srv_restore(pos: Vector3, teleport: bool) -> void:
+	hugged = 0
 	status = Status.ALIVE
 	hp = GameConfig.PLAYER_MAX_HP
 	bleed_left = 0.0

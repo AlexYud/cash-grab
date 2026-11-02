@@ -9,12 +9,13 @@ const L_ENEMIES := 4
 const L_BARRICADES := 8
 const L_RAGDOLLS := 16
 const L_PROPS := 32
+const L_HUG := 64 ## a Hugger clinging to a player: shootable, but does not push the player around
 
 # Players do not collide with each other (no body blocking in doorways); zombies do not
 # collide with each other (soft separation instead) so queues at barricades never jam.
 const MASK_PLAYER_BODY := L_WORLD | L_ENEMIES | L_BARRICADES | L_PROPS
 const MASK_ENEMY_BODY := L_WORLD | L_PLAYERS | L_BARRICADES | L_PROPS
-const MASK_HITSCAN := L_WORLD | L_PLAYERS | L_ENEMIES | L_PROPS
+const MASK_HITSCAN := L_WORLD | L_PLAYERS | L_ENEMIES | L_PROPS | L_HUG
 const MASK_RAGDOLL := L_WORLD | L_PROPS
 
 # --- Player movement ---
@@ -84,9 +85,9 @@ const BOARD_HP := 60.0
 const WAVES: Array[Dictionary] = [
 	{"count": 6, "max_alive": 6, "interval": 1.8, "hp": 100, "speed": 2.2},
 	{"count": 10, "max_alive": 8, "interval": 1.5, "hp": 110, "speed": 2.4},
-	{"count": 14, "max_alive": 10, "interval": 1.3, "hp": 120, "speed": 2.6},
-	{"count": 18, "max_alive": 12, "interval": 1.1, "hp": 135, "speed": 2.8},
-	{"count": 24, "max_alive": 14, "interval": 0.9, "hp": 150, "speed": 3.0},
+	{"count": 14, "max_alive": 10, "interval": 1.3, "hp": 120, "speed": 2.6, "brutes": 1},
+	{"count": 18, "max_alive": 12, "interval": 1.1, "hp": 135, "speed": 2.8, "brutes": 1, "huggers": 2},
+	{"count": 24, "max_alive": 14, "interval": 0.9, "hp": 150, "speed": 3.0, "brutes": 2, "huggers": 3},
 ]
 ## Spawn budget is scaled by the number of players (index = players - 1).
 const PLAYER_COUNT_SCALE: Array[float] = [0.7, 1.0, 1.25, 1.5]
@@ -98,8 +99,39 @@ const EXPLOSION_RADIUS := 6.0
 const EXPLOSION_FORCE := 15.0
 const EXPLOSION_UP := 7.0
 const EXPLOSION_ENEMY_DAMAGE := 160
-const EXPLOSION_PLAYER_DAMAGE := 15 # set to 0 for knockback-only explosions
+const EXPLOSION_PLAYER_DAMAGE := 50 # at the centre, falling off with distance (50 = half a health bar); 0 for knockback only
 
 # --- Effects ---
 const MAX_RAGDOLLS := 10
 const MAX_DEBRIS := 14
+
+# --- Special zombies (waves list "brutes"/"huggers" = extra spawns on top of "count", scaled by player count) ---
+const BRUTE_HP_MULT := 4.0
+const BRUTE_SPEED := 1.9
+const BRUTE_DAMAGE := 30
+const BRUTE_BOARD_MULT := 3.0
+const BRUTE_CHARGE_COOLDOWN := 7.0
+const BRUTE_CHARGE_WINDUP := 0.8
+const BRUTE_CHARGE_TIME := 1.1
+const BRUTE_CHARGE_SPEED := 9.5
+const BRUTE_CHARGE_MIN := 4.0
+const BRUTE_CHARGE_MAX := 12.0
+const HUGGER_HP := 70
+const HUGGER_SPEED := 4.0
+const HUGGER_DPS := 4.0 ## damage per second to the player it clings to
+const HUGGER_SLOW := 0.4 ## the hugged player's movement multiplier
+
+# --- Clumsy zombies (procedural stumbles; fallen zombies are slowed down, not easier to damage) ---
+const TRIP_CHANCE := 0.7 ## when passing over junk on the ground or over a fallen zombie
+const TRIP_COOLDOWN := 5.0
+const TRIP_RANDOM_PER_SEC := 0.03 ## plain stumbling for no reason
+const FALL_MIN := 1.5
+const FALL_MAX := 2.6
+const GETUP_TIME := 0.8
+
+# --- Snacks: rare healing drops ---
+const SNACK_CHANCE := 0.08
+const SNACK_CHANCE_HUGGER := 0.25
+const SNACK_CHANCE_BRUTE := 0.6
+const SNACK_HEAL := 15
+const SNACK_LIFETIME := 20.0

@@ -270,7 +270,7 @@ func _build_player() -> void:
 	line.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_add(root, line, "GrabLine")
 	_sync(root, "TransformSync", ["sync_pos", "sync_yaw", "sync_pitch", "sync_vel", "sync_flags", "sync_weapon"], 0.033)
-	_sync(root, "StateSync", ["hp", "status", "bleed_left", "revive_progress", "grabbed_by", "grabbing", "kills"], 0.1)
+	_sync(root, "StateSync", ["hp", "status", "bleed_left", "revive_progress", "grabbed_by", "grabbing", "kills", "hugged"], 0.1)
 	_save(root, "res://scenes/player/player.tscn")
 
 
@@ -288,6 +288,14 @@ func _build_zombie() -> void:
 	cs.shape = cap
 	_add(root, cs, "Collision")
 	cs.position = Vector3(0, 0.85, 0)
+	# while a zombie is lying on the floor its hit shape is a low box instead (toggled in zombie.gd)
+	var fs := CollisionShape3D.new()
+	var fb := BoxShape3D.new()
+	fb.size = Vector3(0.6, 0.4, 1.7)
+	fs.shape = fb
+	fs.disabled = true
+	_add(root, fs, "FallenShape")
+	fs.position = Vector3(0, 0.2, 0)
 	var vis := Node3D.new()
 	vis.set_script(_script("res://scripts/characters/puppet.gd"))
 	_add(root, vis, "Visual")
@@ -352,6 +360,30 @@ func _build_saloon() -> void:
 	_solid_box(nav, "Piano", Vector3(9.8, 0.65, 5.6), Vector3(1.8, 1.3, 0.8), Color(0.12, 0.1, 0.1))
 	_solid_box(nav, "Crate1", Vector3(9.9, 0.55, -6.5), Vector3(1.1, 1.1, 1.1), Color(0.55, 0.42, 0.25))
 	_solid_box(nav, "Crate2", Vector3(8.7, 0.55, -6.8), Vector3(1.1, 1.1, 1.1), Color(0.5, 0.38, 0.22))
+
+	# junk on the ground that zombies trip over (not solid: players and bullets ignore it, zombie.gd checks the group)
+	var trips := Node3D.new()
+	_add(root, trips, "TripSpots")
+	var trip_defs := [
+		[Vector3(-3.0, 0, 3.5), 0], [Vector3(3.2, 0, -3.3), 1], [Vector3(0.5, 0, 5.5), 2], [Vector3(6.0, 0, 1.0), 0],
+		[Vector3(-6.5, 0, -2.0), 1], [Vector3(1.5, 0, -2.5), 2], [Vector3(0.0, 0, 12.0), 0], [Vector3(-14.0, 0, 0.5), 1],
+		[Vector3(6.0, 0, -12.5), 2], [Vector3(-6.0, 0, 14.0), 1], [Vector3(8.0, 0, 12.5), 0], [Vector3(-12.5, 0, -4.0), 2],
+	]
+	for i in trip_defs.size():
+		var spot := Marker3D.new()
+		_add(trips, spot, "T%d" % i)
+		spot.position = trip_defs[i][0]
+		spot.add_to_group("trip_spots", true)
+		match int(trip_defs[i][1]):
+			0: # crate
+				var c := _mesh_box(spot, "Crate", Vector3(0, 0.15, 0), Vector3(0.55, 0.3, 0.5), Color(0.55, 0.42, 0.25))
+				c.rotation.y = i * 0.7
+			1: # plank
+				var pl := _mesh_box(spot, "Plank", Vector3(0, 0.05, 0), Vector3(1.1, 0.08, 0.22), WOOD)
+				pl.rotation.y = i * 1.3
+			2: # bottle on its side
+				var b := _mesh_box(spot, "Bottle", Vector3(0, 0.06, 0), Vector3(0.35, 0.12, 0.12), Color(0.2, 0.55, 0.3))
+				b.rotation.y = i * 0.9
 
 	# non-colliding dressing
 	var decor := Node3D.new()

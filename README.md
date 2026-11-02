@@ -19,7 +19,7 @@ entrances, a pistol and a shotgun, one zombie type, five waves. Godot **4.7** + 
 | Mouse / LMB | look / fire | **G** (hold) | grab a nearby teammate and pull / drag them |
 | R | reload | **E** (hold) | repair barricade, or revive a downed teammate |
 | 1, 2 / wheel | pistol, shotgun | **V** (hold) / **M** | push-to-talk (if enabled) / mute mic |
-| Esc | pause menu (mic mode, volume, sensitivity) | | |
+| Esc | pause menu (mic mode, master + voice + per-teammate volume, sensitivity) | | |
 
 ## What is in v0.1 (GDD feature rules)
 
@@ -34,7 +34,7 @@ entrances, a pistol and a shotgun, one zombie type, five waves. Godot **4.7** + 
 | Downed + revive | `player/player.gd` | crawl, pistol only, 45 s bleed-out, 3.5 s hold-to-revive |
 | Knockback | shove, shotgun (friendly fire = knockback, no HP), `world/explosive_barrel.gd` | host validates, owning client applies the launch |
 | Ragdolls | `characters/puppet.gd`, `fx/ragdoll.gd`, `autoload/fx.gd` | local, short, pin-jointed primitives; capped at 10; players return to a normal body |
-| Enemy AI | `enemy/zombie.gd` | walks to its entrance, breaks boards, then chases on a runtime-baked navmesh |
+| Enemy AI | `enemy/zombie.gd` | walks to its entrance, breaks boards, then chases on a runtime-baked navmesh. From wave 3 a **Brute** (big, charges in a line, launches what it hits, bonks into walls) and from wave 4 **Huggers** (cling to a player: slow + a little drain until shoved or shot off). All zombies are clumsy: they trip over junk on the ground, over fallen zombies and each other, and lie on the floor for a moment. About 8% of kills (more for specials) drop a **snack** that heals 15 HP |
 | Proximity voice | `autoload/voice.gd` | pure GDScript (mic capture, mu-law, host relay, per-speaker 3D playback) |
 
 ## Network model (host-authoritative)
@@ -65,7 +65,7 @@ and `resources/weapons/*.tres`.
 - **Downed players** are ignored by zombies and bleed out after 45 s; **eliminated** players come back at full health
   when the wave is cleared (`RESTORE_ON_WAVE_CLEAR`), so nobody sits out a whole test.
 - **Ammo**: reserve is unlimited, only reloading limits you.
-- **Friendly fire** never costs HP. **Explosions** launch everyone nearby and do up to 15 HP to players
+- **Friendly fire** never costs HP and never ragdolls the victim (just a knock-back and stumble). **Explosions** launch everyone nearby and do up to 50 HP to players (half a bar, less with distance)
   (`EXPLOSION_PLAYER_DAMAGE = 0` for knockback only). The level has **two** explosive barrels; the GDD says "one test
   explosion", so delete `Barrels/Barrel1` in `scenes/world/saloon.tscn` if you want exactly one.
 - **Difficulty** is a first guess. The spawn budget scales with player count (x0.7 / 1.0 / 1.25 / 1.5). As a floor, I
@@ -81,7 +81,7 @@ needs a window.
 
 ```powershell
 $env:GODOT_BIN = "C:\path\to\Godot_v4.7-stable_win64_console.exe"   # the console exe must sit next to the main exe
-.\tests\run_tests.ps1 -Test all          # or one of: m0 m1 m2 m3a m3b m4a m4b m4c m4d soak2 soak4 hard2 hard4
+.\tests\run_tests.ps1 -Test all          # or one of: m0 m1 m2 m3a m3b m4a m4b m4c m4d m5 soak2 soak4 hard2 hard4
 ```
 
 | Test | Covers |
@@ -95,6 +95,7 @@ $env:GODOT_BIN = "C:\path\to\Godot_v4.7-stable_win64_console.exe"   # the consol
 | m4b | voice path with a test tone: encode, relay, decode, range culling (the GDD's "voice" spike, minus real audio hardware) |
 | m4c | fifth player is refused; four distinct colours |
 | m4d | host sends everyone back to the lobby and starts a second run from a clean world |
+| m5 | clumsy zombies trip and lie down, brute charge, snack drop + healing, hugger latch + shove-off, friendly fire without the death ragdoll |
 | soak2 / soak4 | a whole five-wave run with 2 / 4 scripted players at 3x speed in god mode (so unskilled bots always finish) |
 | hard2 / hard4 | the same bots without god mode, as a difficulty probe; not part of `all` and allowed to fail |
 

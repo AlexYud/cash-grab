@@ -21,6 +21,7 @@ var hold := false ## tests: freeze the break timer and spawning so a bot can sta
 var _spawn_timer := 0.0
 var _next_id := 1
 var _last_entrance := -1
+var _kind_plan: Array = [] ## kinds still to spawn this wave (specials are shuffled in with the normals)
 
 @onready var enemy_spawner: MultiplayerSpawner = $"../EnemySpawner"
 @onready var enemies: Node3D = $"../Enemies"
@@ -56,6 +57,9 @@ func start_run() -> void:
 	for e in enemies.get_children():
 		e.queue_free()
 	level.reset_run()
+	Fx.srv_clear_snacks()
+	for p in Net.all_players():
+		p.hugged = 0
 	wave = 0
 	to_spawn = 0
 	_next_id = 1
@@ -93,7 +97,17 @@ func _begin_wave() -> void:
 	var cfg: Dictionary = GameConfig.WAVES[wave - 1]
 	var players := maxi(Net.all_players().size(), 1)
 	var scale: float = GameConfig.PLAYER_COUNT_SCALE[clampi(players - 1, 0, GameConfig.PLAYER_COUNT_SCALE.size() - 1)]
-	to_spawn = maxi(int(round(cfg["count"] * scale)), 1)
+	var normal := maxi(int(round(cfg["count"] * scale)), 1)
+	_kind_plan.clear()
+	for i in _scaled_special(int(cfg.get("brutes", 0)), scale):
+		_kind_plan.append(Zombie.Kind.BRUTE)
+	for i in _scaled_special(int(cfg.get("huggers", 0)), scale):
+		_kind_plan.append(Zombie.Kind.HUGGER)
+	var specials := _kind_plan.size()
+	for i in normal:
+		_kind_plan.append(Zombie.Kind.NORMAL)
+	_kind_plan.shuffle()
+	to_spawn = normal + specials
 	_spawn_timer = 1.5
 	for b in level.barrels:
 		if not b.alive:
@@ -147,12 +161,21 @@ func _spawn_one(cfg: Dictionary) -> void:
 	var base := level.enemy_spawn_point(entrance)
 	var lateral := bar.global_basis.x.normalized() * randf_range(-2.0, 2.0)
 	var back := bar.outward_dir() * randf_range(0.0, 3.0)
-	spawn_at(base + lateral + back, entrance, int(cfg["hp"] * randf_range(0.92, 1.08)), float(cfg["speed"]) * randf_range(0.85, 1.15))
+	var zk: int = _kind_plan.pop_back() if not _kind_plan.is_empty() else Zombie.Kind.NORMAL
+	var hp := int(cfg["hp"] * randf_range(0.92, 1.08))
+	var speed := float(cfg["speed"]) * randf_range(0.85, 1.15)
+	if zk == Zombie.Kind.BRUTE:
+		hp = int(hp * GameConfig.BRUTE_HP_MULT)
+		speed = GameConfig.BRUTE_SPEED
+	elif zk == Zombie.Kind.HUGGER:
+		hp = GameConfig.HUGGER_HP
+		speed = GameConfig.HUGGER_SPEED * randf_range(0.9, 1.1)
+	spawn_at(base + lateral + back, entrance, hp, speed, zk)
 	to_spawn -= 1
 
 
 ## Host only. Also used by tests to stage a zombie wherever they need one.
-func spawn_at(pos: Vector3, entrance: int, hp: int, speed: float) -> Zombie:
+func spawn_at(pos: Vector3, entrance: int, hp: int, speed: float, zombie_kind: int = 0) -> Zombie:
 	var out := level.barricades[entrance].outward_dir()
 	pos.y = 0.1
 	var z := enemy_spawner.spawn({
@@ -162,7 +185,13 @@ func spawn_at(pos: Vector3, entrance: int, hp: int, speed: float) -> Zombie:
 		"slot": randi() % 4,
 		"hp": hp,
 		"speed": speed,
+		"kind": zombie_kind,
 		"yaw": atan2(out.x, out.z),
 	}) as Zombie
 	_next_id += 1
 	return z
+
+
+## Specials scale with the team like everything else, but never round away to nothing.
+func _scaled_special(n: int, scale: float) -> int:
+	return 0 if n <= 0 else maxi(int(round(n * scale)), 1)

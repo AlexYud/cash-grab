@@ -64,12 +64,17 @@ func _prune(list: Array) -> Array:
 
 ## Dead enemies are freed on the host immediately; every peer builds its own ragdoll from this event.
 @rpc("authority", "call_local", "reliable")
-func enemy_died(pos: Vector3, yaw: float, impulse: Vector3) -> void:
+func enemy_died(pos: Vector3, yaw: float, impulse: Vector3, kind: int = 0) -> void:
 	if world == null:
 		return
 	var pup := Puppet.new()
 	world.add_child(pup)
-	pup.build(Puppet.Kind.ZOMBIE, Color.WHITE)
+	if kind == Zombie.Kind.BRUTE:
+		pup.build(Puppet.Kind.ZOMBIE, Color(0.5, 0.16, 0.12), Color(0.58, 0.42, 0.36))
+	elif kind == Zombie.Kind.HUGGER:
+		pup.build(Puppet.Kind.ZOMBIE, Color(0.78, 0.66, 0.18), Color(0.72, 0.78, 0.36))
+	else:
+		pup.build(Puppet.Kind.ZOMBIE, Color.WHITE)
 	pup.global_position = pos
 	pup.rotation.y = yaw
 	add_ragdoll(pup.get_ragdoll_parts(), impulse)
@@ -213,3 +218,101 @@ func _burst(pos: Vector3, normal: Vector3, count: int, color: Color, vmin: float
 	p.global_position = pos
 	p.emitting = true
 	get_tree().create_timer(life + 0.3).timeout.connect(p.queue_free)
+
+
+# --- snacks: rare healing drops ----------------------------------------------------------------------------
+# The host decides drops and pickups; every peer just draws the snack while it exists.
+
+var _snack_nodes: Dictionary = {} ## id -> Node3D (every peer)
+var _snack_info: Dictionary = {} ## id -> {"pos": Vector3, "left": float} (host only)
+var _next_snack := 1
+
+
+## Host: called when a zombie dies. Chance depends on the kind (Brutes drop one almost always).
+func srv_try_snack(pos: Vector3, zombie_kind: int) -> void:
+	if not multiplayer.is_server():
+		return
+	var chance := GameConfig.SNACK_CHANCE
+	if zombie_kind == Zombie.Kind.BRUTE:
+		chance = GameConfig.SNACK_CHANCE_BRUTE
+	elif zombie_kind == Zombie.Kind.HUGGER:
+		chance = GameConfig.SNACK_CHANCE_HUGGER
+	if Net.debug_snack_chance >= 0.0:
+		chance = Net.debug_snack_chance
+	if randf() >= chance:
+		return
+	var id := _next_snack
+	_next_snack += 1
+	var p := pos
+	p.y = 0.0
+	_snack_info[id] = {"pos": p, "left": GameConfig.SNACK_LIFETIME}
+	snack_spawned.rpc(id, p)
+
+
+func srv_clear_snacks() -> void:
+	for id in _snack_info.keys():
+		snack_gone.rpc(id, 0)
+	_snack_info.clear()
+
+
+@rpc("authority", "call_local", "reliable")
+func snack_spawned(id: int, pos: Vector3) -> void:
+	if world == null:
+		return
+	var n := Node3D.new()
+	var donut := MeshInstance3D.new()
+	var tm := TorusMesh.new()
+	tm.inner_radius = 0.07
+	tm.outer_radius = 0.17
+	donut.mesh = tm
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(1.0, 0.55, 0.75)
+	m.emission_enabled = true
+	m.emission = Color(1.0, 0.4, 0.6)
+	m.emission_energy_multiplier = 0.6
+	donut.material_override = m
+	n.add_child(donut)
+	var l := OmniLight3D.new()
+	l.light_color = Color(1.0, 0.6, 0.75)
+	l.light_energy = 0.8
+	l.omni_range = 2.5
+	n.add_child(l)
+	world.add_child(n)
+	n.global_position = pos + Vector3(0, 0.5, 0)
+	_snack_nodes[id] = n
+	Sfx.play_at(&"hit_marker", pos + Vector3.UP, -6.0, 1.6)
+
+
+## `by` is the peer who ate it (0 = it rotted away).
+@rpc("authority", "call_local", "reliable")
+func snack_gone(id: int, by: int) -> void:
+	var n: Node3D = _snack_nodes.get(id)
+	_snack_nodes.erase(id)
+	if is_instance_valid(n):
+		if by != 0:
+			Sfx.play_at(&"revive", n.global_position, -4.0, 1.4)
+		n.queue_free()
+
+
+func _process(delta: float) -> void:
+	for n in _snack_nodes.values():
+		if is_instance_valid(n):
+			n.rotate_y(delta * 2.5)
+			n.position.y += sin(Time.get_ticks_msec() / 250.0) * delta * 0.15
+
+
+func _physics_process(delta: float) -> void:
+	if not multiplayer.is_server() or _snack_info.is_empty():
+		return
+	for id in _snack_info.keys():
+		var info: Dictionary = _snack_info[id]
+		info["left"] = float(info["left"]) - delta
+		var eaten := 0
+		for p in Net.all_players():
+			if p.status == Player.Status.ALIVE and p.hp < GameConfig.PLAYER_MAX_HP and p.global_position.distance_to(info["pos"]) < 1.3:
+				if p.srv_heal(GameConfig.SNACK_HEAL):
+					eaten = p.peer_id
+					break
+		if eaten != 0 or float(info["left"]) <= 0.0:
+			_snack_info.erase(id)
+			snack_gone.rpc(id, eaten)

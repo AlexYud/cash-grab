@@ -7,6 +7,7 @@ signal leave_requested
 var _mode_btn: Button
 var _meter: ProgressBar
 var _keys: Label
+var _voice_players: VBoxContainer
 
 
 func _ready() -> void:
@@ -15,7 +16,13 @@ func _ready() -> void:
 	add_child(panel)
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 10)
-	panel.add_child(UiKit.margin(box, 24))
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(500, 640)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	var pad := UiKit.margin(box, 24)
+	pad.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(pad)
+	panel.add_child(scroll)
 	box.add_child(UiKit.label("PAUSED", 40, UiKit.ACCENT))
 	box.add_child(UiKit.label("The game keeps running for everyone else.", 16, UiKit.DIM))
 	var resume := UiKit.button("Resume")
@@ -36,8 +43,13 @@ func _ready() -> void:
 	tip.custom_minimum_size = Vector2(420, 0)
 	box.add_child(tip)
 
+	var vv := _slider_row("Voice volume", Voice.master_gain, func(v: float) -> void: Voice.set_master_gain(v))
+	box.add_child(vv)
+	_voice_players = VBoxContainer.new()
+	box.add_child(_voice_players)
+
 	var vrow := HBoxContainer.new()
-	vrow.add_child(UiKit.label("Volume", 20, UiKit.DIM))
+	vrow.add_child(UiKit.label("Master", 20, UiKit.DIM))
 	var vol := HSlider.new()
 	vol.min_value = 0.0
 	vol.max_value = 1.0
@@ -72,9 +84,32 @@ func _ready() -> void:
 	_refresh()
 
 
+func _slider_row(label_text: String, value: float, on_change: Callable) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	var l := UiKit.label(label_text, 18, UiKit.DIM)
+	l.custom_minimum_size = Vector2(150, 0)
+	row.add_child(l)
+	var s := HSlider.new()
+	s.min_value = 0.0
+	s.max_value = 2.0
+	s.step = 0.05
+	s.value = value
+	s.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	s.value_changed.connect(on_change)
+	row.add_child(s)
+	return row
+
+
 func _refresh() -> void:
 	if _mode_btn != null:
 		_mode_btn.text = "Mode: " + Voice.mode_name()
+	if _voice_players != null and visible:
+		for c in _voice_players.get_children():
+			c.queue_free()
+		for p in Net.all_players():
+			if p != Net.local_player:
+				var pname := p.player_name
+				_voice_players.add_child(_slider_row("  " + pname, float(Voice.player_gains.get(pname, 1.0)), func(v: float) -> void: Voice.set_player_gain(pname, v)))
 
 
 func _process(_delta: float) -> void:

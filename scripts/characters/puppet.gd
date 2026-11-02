@@ -36,7 +36,7 @@ var _ragdoll: Ragdoll = null
 var _ragdoll_left := 0.0
 
 
-func build(p_kind: int, shirt: Color) -> void:
+func build(p_kind: int, shirt: Color, skin_override: Color = Color(0, 0, 0, 0)) -> void:
 	kind = p_kind
 	body = Node3D.new()
 	body.name = "Body"
@@ -44,7 +44,9 @@ func build(p_kind: int, shirt: Color) -> void:
 	add_child(body)
 	var zombie := kind == Kind.ZOMBIE
 	var skin_c := ZOMBIE_SKIN if zombie else SKIN
-	var shirt_c := ZOMBIE_SHIRT if zombie else shirt
+	if skin_override.a > 0.0:
+		skin_c = skin_override
+	var shirt_c := ZOMBIE_SHIRT if (zombie and shirt == Color.WHITE) else shirt
 
 	var torso := _mesh_node(body, "Torso", BoxMesh.new(), Vector3(0.46, 0.6, 0.26), shirt_c)
 	torso.position = Vector3(0, 0.3, 0)

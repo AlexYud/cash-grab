@@ -251,7 +251,8 @@ func _srv_hits(weapon_idx: int, origin: Vector3, hits: Array) -> void:
 				var flat := Vector3(dir.x, 0.0, dir.z)
 				flat = flat.normalized() if flat.length() > 0.01 else Vector3.FORWARD
 				var push := minf(w.player_knockback * pellets, 11.0)
-				p.srv_launch(flat * push + Vector3.UP * minf(pellets * 0.5, 3.5), w.player_stagger + clampf(push * 0.05, 0.0, 0.5), push >= 6.0)
+								# friendly fire: a shove-back and a stumble, never the body-ragdoll (that reads as death)
+				p.srv_launch(flat * push + Vector3.UP * minf(pellets * 0.5, 3.5), w.player_stagger + clampf(push * 0.05, 0.0, 0.5), false)
 			Hit.BARREL:
 				var b := ExplosiveBarrel.find_by_index(get_tree(), id)
 				if b != null and b.alive:

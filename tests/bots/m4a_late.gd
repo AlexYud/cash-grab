@@ -11,7 +11,8 @@ func run() -> void:
 	report("late: zombies that were already in the arena are replicated to it", enemies().size() == 2, "n=%d" % enemies().size())
 	var boards := await wait_until(func() -> bool: return level.barricades[2].boards == 3, 5.0)
 	report("late: barricade damage from before it joined is visible", boards, "boards=%d" % level.barricades[2].boards)
-	report("late: wave state matches the host's", wm.state == WaveManager.State.BREAK, "state=%d" % wm.state)
+	var wave_ok := await wait_until(func() -> bool: return wm.state == WaveManager.State.BREAK, 5.0)
+	report("late: wave state matches the host's", wave_ok, "state=%d" % wm.state)
 	var start := player.global_position
 	await walk_to(start + Vector3(-4.0, 0, 0), 0.4, 6.0)
 	report("late: the new player can move", player.global_position.distance_to(start) > 2.5)
