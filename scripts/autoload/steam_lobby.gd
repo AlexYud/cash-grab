@@ -31,7 +31,8 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
-	if available and not _embedded and _steam.has_method("run_callbacks"):
+	# pump callbacks every frame even if init said it embedded them: without this, lobby events never arrive
+	if available and _steam.has_method("run_callbacks"):
 		_steam.run_callbacks()
 
 
@@ -153,6 +154,7 @@ func _on_lobby_created(connect_result: int, id: int) -> void:
 		return
 	var peer: MultiplayerPeer = ClassDB.instantiate("SteamMultiplayerPeer")
 	var err: int = peer.create_host(0)
+	print("[STEAM] lobby created id=%d; create_host(0) -> %d" % [id, err])
 	if err != OK:
 		_fail("Could not start Steam networking (error %d)." % err)
 		return
@@ -161,7 +163,7 @@ func _on_lobby_created(connect_result: int, id: int) -> void:
 
 # --- joining ---------------------------------------------------------------------------------------
 
-func join(id: int, player_name: String) -> void:
+func join(player_name: String, id: int) -> void:
 	if not _ready_check():
 		return
 	Net.local_name = player_name
@@ -177,6 +179,7 @@ func join(id: int, player_name: String) -> void:
 		return
 	_mode = "join"
 	_set_status("Joining Steam lobby %d..." % id)
+	print("[STEAM] joinLobby(%d); has lobby_joined signal: %s; peer API has create_client: %s" % [id, _steam.has_signal("lobby_joined"), _peer_api().has("create_client")])
 	_steam.joinLobby(id)
 	get_tree().create_timer(20.0).timeout.connect(func() -> void:
 		if _mode == "join" and Net.phase == Net.Phase.MENU:
@@ -186,10 +189,11 @@ func join(id: int, player_name: String) -> void:
 
 func _on_join_requested(id: int, _friend: int) -> void: # accepted a Steam invite
 	if Net.phase == Net.Phase.MENU:
-		join(id, Net.local_name)
+		join(Net.local_name, id)
 
 
 func _on_lobby_joined(id: int, _permissions: int, _locked: bool, response: int) -> void:
+	print("[STEAM] lobby_joined: id=%d response=%d mode=%s" % [id, response, _mode])
 	if _mode != "join":
 		return
 	if response != 1:
@@ -200,6 +204,7 @@ func _on_lobby_joined(id: int, _permissions: int, _locked: bool, response: int) 
 	var owner_id: int = _steam.getLobbyOwner(id)
 	var peer: MultiplayerPeer = ClassDB.instantiate("SteamMultiplayerPeer")
 	var err: int = peer.create_client(owner_id, 0)
+	print("[STEAM] create_client(owner=%d) -> %d" % [owner_id, err])
 	if err != OK:
 		_mode = ""
 		_fail("Could not connect through Steam (error %d)." % err)
