@@ -98,6 +98,7 @@ func _on_host_requested(player_name: String, port: int) -> void:
 		menu.set_status("Could not host on port %d (already in use?)" % port)
 		return
 	lobby.port = port
+	Net.try_upnp(port)
 
 
 func _on_join_requested(player_name: String, address: String, port: int) -> void:

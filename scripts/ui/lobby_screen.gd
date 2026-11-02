@@ -39,6 +39,7 @@ func _ready() -> void:
 	leave.pressed.connect(func() -> void: leave_requested.emit())
 	box.add_child(leave)
 	Net.roster_changed.connect(refresh)
+	Net.upnp_changed.connect(refresh)
 	visibility_changed.connect(refresh)
 	refresh()
 
@@ -67,7 +68,7 @@ func refresh() -> void:
 		_rows.add_child(UiKit.label("   - open slot -", 20, UiKit.DIM.darkened(0.3)))
 	if Net.is_host():
 		var ips := ", ".join(Net.local_addresses())
-		_info.text = "You are hosting on port %d.\nFriends on your network join with: %s\n(over the internet: forward UDP port %d on your router and share your public IP)" % [port, ips if ips != "" else "your IP", port]
+		_info.text = "You are hosting on port %d.\nSame network: %s\nOver the internet: %s" % [port, ips if ips != "" else "your IP", Net.upnp_status if Net.upnp_status != "" else "forward UDP %d on your router, or use a VPN" % port]
 		_start.visible = true
 		_hint.text = "Start whenever everyone is in. Players can also join while a run is in progress."
 	else:

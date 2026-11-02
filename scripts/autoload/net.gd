@@ -105,7 +105,58 @@ func join_game(address: String, port: int, player_name: String) -> Error:
 		return err
 	multiplayer.multiplayer_peer = peer
 	local_name = player_name
+	get_tree().create_timer(12.0).timeout.connect(func() -> void:
+		if multiplayer.multiplayer_peer == peer and peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTING:
+			leave("")
+			join_failed.emit("Can't reach %s:%d. Check the IP and port, that the host opened UDP %d (port forwarding / UPnP / VPN), and the host's firewall." % [address, port, port]))
 	return OK
+
+
+# --- UPnP: ask the router to open the port (works on many home routers, not behind CGNAT) ---------------
+
+signal upnp_changed
+var upnp_status := ""
+var _upnp: UPNP = null
+var _upnp_port := 0
+var _upnp_thread: Thread = null
+
+
+func try_upnp(port: int) -> void:
+	if _upnp_thread != null or DisplayServer.get_name() == "headless":
+		return
+	upnp_status = "Opening port %d with UPnP..." % port
+	upnp_changed.emit()
+	_upnp_thread = Thread.new()
+	_upnp_thread.start(_upnp_work.bind(port))
+
+
+func _upnp_work(port: int) -> void:
+	var u := UPNP.new()
+	var msg := ""
+	if u.discover(2000, 2, "InternetGatewayDevice") == UPNP.UPNP_RESULT_SUCCESS and u.get_gateway() != null and u.get_gateway().is_valid_gateway():
+		if u.add_port_mapping(port, port, "CashGrab", "UDP", 0) == UPNP.UPNP_RESULT_SUCCESS:
+			msg = "Port opened. Friends outside your network join: %s : %d" % [u.query_external_address(), port]
+		else:
+			msg = "UPnP found your router but it refused to open the port. Forward UDP %d manually or use a VPN (Tailscale/ZeroTier)." % port
+	else:
+		msg = "No UPnP router found. Forward UDP %d manually or use a VPN (Tailscale/ZeroTier)." % port
+	_upnp_done.call_deferred(u, msg, port)
+
+
+func _upnp_done(u: UPNP, msg: String, port: int) -> void:
+	_upnp_thread.wait_to_finish()
+	_upnp_thread = null
+	_upnp = u
+	_upnp_port = port
+	upnp_status = msg
+	upnp_changed.emit()
+
+
+func _close_upnp() -> void:
+	if _upnp != null and _upnp_port > 0:
+		_upnp.delete_port_mapping(_upnp_port, "UDP")
+	_upnp = null
+	upnp_status = ""
 
 
 func leave(reason: String = "") -> void:
@@ -113,6 +164,7 @@ func leave(reason: String = "") -> void:
 	if peer is ENetMultiplayerPeer:
 		peer.close()
 	multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
+	_close_upnp()
 	roster.clear()
 	local_player = null
 	ui_blocking = false
