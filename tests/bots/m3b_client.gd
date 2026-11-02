@@ -29,11 +29,15 @@ func run() -> void:
 	face_point(host.global_position)
 	await wait(0.5)
 	await shove()
-	var rag := await wait_until(func() -> bool: return host.puppet.is_ragdolling(), 2.0)
-	report("P: observers see the shoved player ragdoll", rag)
-	report("P: the live body is hidden while the ragdoll plays", rag and not host.puppet.body.visible)
-	var recovered := await wait_until(func() -> bool: return not host.puppet.is_ragdolling() and host.puppet.body.visible, 4.0)
-	report("P: the player returns to a controlled body afterwards", recovered)
+	var start := host.global_position
+	var rag := false
+	var moved := 0.0
+	for i in 80:
+		rag = rag or host.puppet.is_ragdolling()
+		moved = maxf(moved, host.global_position.distance_to(start))
+		await get_tree().physics_frame
+	report("P: a shoved player is knocked back", moved > 1.5, "moved=%.1f" % moved)
+	report("P: ...and never turns into a ragdoll (knock back only)", not rag and host.puppet.body.visible)
 	signal_peers("P_done")
 
 	# --- R ---

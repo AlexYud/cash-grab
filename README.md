@@ -1,7 +1,7 @@
 # CashGrab - Co-op Wave Survival (prototype 0.1)
 
 Comedy-first, round-based FPS for 1-4 players, built from the GDD (v0.1). One saloon-sized arena, three barricaded
-entrances, a pistol and a shotgun, one zombie type, five waves. Godot **4.7** + GDScript, Jolt Physics.
+entrances, four weapons, six zombie types, ten waves. Godot **4.7** + GDScript, Jolt Physics.
 
 ## Run it
 
@@ -18,7 +18,7 @@ entrances, a pistol and a shotgun, one zombie type, five waves. Godot **4.7** + 
 | WASD / Space / Shift | move / jump / sprint | **F** | shove (1.2 s cooldown) |
 | Mouse / LMB | look / fire | **G** (hold) | grab a nearby teammate and pull / drag them |
 | R | reload | **E** (hold) | repair barricade, or revive a downed teammate |
-| 1, 2 / wheel | pistol, shotgun | **V** (hold) / **M** | push-to-talk (if enabled) / mute mic |
+| 1-4 / wheel | pistol, shotgun, Yank Gun, Disco Blaster | **V** (hold) / **M** | push-to-talk (if enabled) / mute mic |
 | Esc | pause menu (mic mode, master + voice + per-teammate volume, sensitivity) | | |
 
 ## What is in v0.1 (GDD feature rules)
@@ -26,15 +26,15 @@ entrances, a pistol and a shotgun, one zombie type, five waves. Godot **4.7** + 
 | GDD | Where | Notes |
 |---|---|---|
 | Co-op 1-4, lobby/host/join/disconnect | `autoload/net.gd`, `ui/` | listen-server over ENet; late join; full game turns a 5th player away; leaving cleans up grabs |
-| Gunplay, 2 guns | `player/player_weapons.gd`, `resources/weapons/*.tres` | hitscan, falloff, recoil, reload, hit/kill markers; edit the `.tres` files to balance |
-| Waves | `world/wave_manager.gd`, `game_config.gd` | 5 escalating waves, break between them, scales with player count |
+| Gunplay, 4 guns | `player/player_weapons.gd`, `resources/weapons/*.tres` | hitscan, falloff, recoil, reload, hit/kill markers; edit the `.tres` files to balance. **Yank Gun** reels what it hits (zombie or teammate) in to you; **Disco Blaster** makes zombies dance for 3 s instead of attacking |
+| Waves | `world/wave_manager.gd`, `game_config.gd` | 10 escalating waves, break between them, scales with player count |
 | Barricades | `world/barricade.gd` | 5 boards, zombies break them, hold **E** to rebuild, blocked while something stands in the gap |
-| Grab friends | `player/player.gd` (`_srv_grab`) | pull a teammate to you; dragging a downed one is slower for you and sets them behind you |
+| Grab friends | `player/player.gd` (`_srv_grab`, `_srv_throw`) | pull a teammate to you. **Grab a downed teammate and you carry them** (your weapons lock): **Fire** throws them. Any player flying fast (thrown, shoved, blown up) is a bowling ball and knocks zombies over |
 | Shove | `player/player.gd` (`_srv_shove`) | cone in front of you; launches teammates, staggers zombies |
 | Downed + revive | `player/player.gd` | crawl, pistol only, 45 s bleed-out, 3.5 s hold-to-revive |
 | Knockback | shove, shotgun (friendly fire = knockback, no HP), `world/explosive_barrel.gd` | host validates, owning client applies the launch |
-| Ragdolls | `characters/puppet.gd`, `fx/ragdoll.gd`, `autoload/fx.gd` | local, short, pin-jointed primitives; capped at 10; players return to a normal body |
-| Enemy AI | `enemy/zombie.gd` | walks to its entrance, breaks boards, then chases on a runtime-baked navmesh. From wave 3 a **Brute** (big, charges in a line, launches what it hits, bonks into walls) and from wave 4 **Huggers** (cling to a player: slow + a little drain until shoved or shot off). All zombies are clumsy: they trip over junk on the ground, over fallen zombies and each other, and lie on the floor for a moment. About 8% of kills (more for specials) drop a **snack** that heals 15 HP |
+| Ragdolls | `characters/puppet.gd`, `fx/ragdoll.gd`, `autoload/fx.gd` | zombies ragdoll when they die (local, capped at 10). Players never ragdoll: they get knocked back and stagger |
+| Enemy AI | `enemy/zombie.gd` | walks to its entrance, breaks boards, then chases on a runtime-baked navmesh. Specials arrive from wave 3: **Brute** (big, charges in a line, launches what it hits, bonks into walls), **Hugger** (clings to a player: slows them and drains a little HP until shoved or shot off), **Leaper** (pounces, then faceplants), **Bloater** (bursts into goo when killed, knocking everyone nearby over). Health no longer regenerates: snacks are the only healing. All zombies are clumsy: they trip over junk on the ground, over fallen zombies and each other, and lie on the floor for a moment. About 8% of kills (more for specials) drop a **snack** that heals 15 HP |
 | Proximity voice | `autoload/voice.gd` | pure GDScript (mic capture, mu-law, host relay, per-speaker 3D playback) |
 
 ## Network model (host-authoritative)
@@ -81,13 +81,13 @@ needs a window.
 
 ```powershell
 $env:GODOT_BIN = "C:\path\to\Godot_v4.7-stable_win64_console.exe"   # the console exe must sit next to the main exe
-.\tests\run_tests.ps1 -Test all          # or one of: m0 m1 m2 m3a m3b m4a m4b m4c m4d m5 soak2 soak4 hard2 hard4
+.\tests\run_tests.ps1 -Test all          # or one of: m0 m1 m2 m3a m3b m4a m4b m4c m4d m5 m6 soak2 soak4 hard2 hard4
 ```
 
 | Test | Covers |
 |---|---|
 | m0 | movement sync, shove launch, grab pull and release (the GDD's "grab + launch" spike) |
-| m1 | pistol kills, kill confirm, friendly-fire shotgun knockback with no HP loss, reload, zombie bites, HP regen |
+| m1 | pistol kills, kill confirm, friendly-fire shotgun knockback with no HP loss, reload, zombie bites, no health regeneration |
 | m2 | zombies break a barricade and walk in, repair prompt, holding E rebuilds boards |
 | m3a | downed: crawl, pistol-only, revive, drag, bleed-out, wave-clear restore |
 | m3b | shove ragdolls seen by observers, ragdoll cap, barrel explosion, game over + restart |
@@ -96,7 +96,8 @@ $env:GODOT_BIN = "C:\path\to\Godot_v4.7-stable_win64_console.exe"   # the consol
 | m4c | fifth player is refused; four distinct colours |
 | m4d | host sends everyone back to the lobby and starts a second run from a clean world |
 | m5 | clumsy zombies trip and lie down, brute charge, snack drop + healing, hugger latch + shove-off, friendly fire without the death ragdoll |
-| soak2 / soak4 | a whole five-wave run with 2 / 4 scripted players at 3x speed in god mode (so unskilled bots always finish) |
+| m6 | carry and throw a downed teammate (bowling), Yank Gun, Disco Blaster, Leaper pounce, Bloater burst |
+| soak2 / soak4 | a whole whole ten-wave run with 2 / 4 scripted players at 3x speed in god mode (so unskilled bots always finish) |
 | hard2 / hard4 | the same bots without god mode, as a difficulty probe; not part of `all` and allowed to fail |
 
 Other bots: `nav_check` (every entrance has a navmesh path to the players:

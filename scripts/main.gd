@@ -31,6 +31,12 @@ var _orbit := 0.0
 
 
 func _ready() -> void:
+	for pair in [["weapon_3", KEY_3], ["weapon_4", KEY_4]]: # registered here so project.godot does not need to change
+		if not InputMap.has_action(pair[0]):
+			InputMap.add_action(pair[0])
+			var ev := InputEventKey.new()
+			ev.physical_keycode = pair[1]
+			InputMap.action_add_event(pair[0], ev)
 	Fx.world = $World/Fx
 	Net.players_root = players_node
 	player_spawner.spawn_function = _spawn_player

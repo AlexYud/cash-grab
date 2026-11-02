@@ -63,8 +63,6 @@ const REVIVE_TIME := 3.5
 const REVIVE_REACH := 2.4
 const REVIVE_HP := 50
 const INVULN_AFTER_REVIVE := 2.0
-const HP_REGEN_DELAY := 5.0
-const HP_REGEN_RATE := 15.0
 ## When a wave is cleared, downed and eliminated players come back (so nobody sits out a whole test).
 const RESTORE_ON_WAVE_CLEAR := true
 
@@ -86,8 +84,13 @@ const WAVES: Array[Dictionary] = [
 	{"count": 6, "max_alive": 6, "interval": 1.8, "hp": 100, "speed": 2.2},
 	{"count": 10, "max_alive": 8, "interval": 1.5, "hp": 110, "speed": 2.4},
 	{"count": 14, "max_alive": 10, "interval": 1.3, "hp": 120, "speed": 2.6, "brutes": 1},
-	{"count": 18, "max_alive": 12, "interval": 1.1, "hp": 135, "speed": 2.8, "brutes": 1, "huggers": 2},
-	{"count": 24, "max_alive": 14, "interval": 0.9, "hp": 150, "speed": 3.0, "brutes": 2, "huggers": 3},
+	{"count": 18, "max_alive": 12, "interval": 1.1, "hp": 135, "speed": 2.8, "brutes": 1, "huggers": 2, "leapers": 2},
+	{"count": 24, "max_alive": 14, "interval": 0.9, "hp": 150, "speed": 3.0, "brutes": 2, "huggers": 3, "leapers": 3, "bloaters": 1},
+	{"count": 28, "max_alive": 15, "interval": 0.85, "hp": 160, "speed": 3.1, "brutes": 2, "huggers": 3, "leapers": 3, "bloaters": 2},
+	{"count": 32, "max_alive": 16, "interval": 0.8, "hp": 170, "speed": 3.2, "brutes": 3, "huggers": 4, "leapers": 4, "bloaters": 2},
+	{"count": 36, "max_alive": 18, "interval": 0.75, "hp": 180, "speed": 3.3, "brutes": 3, "huggers": 4, "leapers": 5, "bloaters": 3},
+	{"count": 40, "max_alive": 20, "interval": 0.7, "hp": 195, "speed": 3.4, "brutes": 4, "huggers": 5, "leapers": 5, "bloaters": 3},
+	{"count": 46, "max_alive": 22, "interval": 0.6, "hp": 210, "speed": 3.5, "brutes": 5, "huggers": 6, "leapers": 6, "bloaters": 4},
 ]
 ## Spawn budget is scaled by the number of players (index = players - 1).
 const PLAYER_COUNT_SCALE: Array[float] = [0.7, 1.0, 1.25, 1.5]
@@ -135,3 +138,24 @@ const SNACK_CHANCE_HUGGER := 0.25
 const SNACK_CHANCE_BRUTE := 0.6
 const SNACK_HEAL := 15
 const SNACK_LIFETIME := 20.0
+
+# --- More specials ---
+const LEAPER_HP := 80
+const LEAPER_SPEED := 3.6
+const LEAPER_DAMAGE := 12
+const LEAPER_COOLDOWN := 4.5
+const LEAPER_WINDUP := 0.55
+const LEAPER_MIN := 3.2
+const LEAPER_MAX := 8.5
+const BLOATER_HP := 160
+const BLOATER_SPEED := 1.6
+const BLOATER_DAMAGE := 10
+const BLOATER_BURST_RADIUS := 3.6
+const SNACK_CHANCE_LEAPER := 0.15
+const SNACK_CHANCE_BLOATER := 0.2
+
+# --- Carrying / throwing downed teammates, and "human bowling" ---
+const THROW_SPEED := 15.0
+const THROW_UP := 5.5
+const BOWLING_MIN_SPEED := 6.5 ## a flying player faster than this knocks zombies over
+const BOWLING_DAMAGE := 25

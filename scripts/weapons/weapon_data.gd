@@ -20,6 +20,7 @@ extends Resource
 @export var player_stagger := 0.0
 @export var recoil_deg := 1.4 ## camera kick per shot
 @export var switch_time := 0.35
+@export var special: StringName = &"" ## "yank" pulls what it hits toward the shooter; "disco" makes zombies dance
 
 
 func damage_at(distance: float) -> float:

@@ -39,6 +39,7 @@ $Tests = [ordered]@{
 	"m4a" = @{ Host = "m4a_host"; Clients = @("m4a_leaver", @{ Bot = "m4a_late"; Delay = 14 }); Autostart = 2; Limit = 120; Extra = @("--hold-waves") }
 	"m4b" = @{ Host = "m4b_host"; Clients = @("m4b_listener"); Limit = 90; Extra = @("--hold-waves"); HostExtra = @("--voice-test-tone") }
 	"m5"  = @{ Host = "m5_host"; Clients = @("m5_client"); Limit = 150; Extra = @("--hold-waves") }
+	"m6"  = @{ Host = "m6_host"; Clients = @("m6_client"); Limit = 180; Extra = @("--hold-waves") }
 	"m4d" = @{ Host = "m4d_host"; Clients = @("m4d_client"); Limit = 90; Extra = @("--hold-waves") }
 	"m4c" = @{ Host = "m4c_host"; Clients = @("m4c_filler", "m4c_filler", "m4c_filler", @{ Bot = ""; Delay = 8; Args = @("--expect-join-fail") }); Autostart = 4; Limit = 120; Extra = @("--hold-waves") }
 	# whole 5-wave runs with scripted players (3x game speed); passing means VICTORY with no script errors

@@ -9,9 +9,9 @@ extends CharacterBody3D
 ## All of them are clumsy: they trip over junk on the ground, over fallen zombies and over each other, and spend
 ## a moment on the floor (just slowed down, not easier to hurt).
 
-enum State { IDLE, CHASE, ATTACK, BARRICADE, STAGGER, FALLEN, LATCHED, CHARGE }
+enum State { IDLE, CHASE, ATTACK, BARRICADE, STAGGER, FALLEN, LATCHED, CHARGE, LEAP, DANCE }
 enum Swing { NONE, PLAYER, BOARD }
-enum Kind { NORMAL, BRUTE, HUGGER }
+enum Kind { NORMAL, BRUTE, HUGGER, LEAPER, BLOATER }
 
 signal died(zombie: Zombie)
 
@@ -52,6 +52,12 @@ var _charge_dir := Vector3.ZERO
 var _charge_hit: Array[int] = []
 var _latched: Player = null
 var _hug_tick := 0.0
+var _dance_left := 0.0
+var _leap_left := 0.0
+var _leap_vel := Vector3.ZERO
+var _leap_hit := false
+var _leap_cd := 2.0
+var _bowl_cd := 0.0
 var _level: SaloonLevel = null
 
 # --- local ---
@@ -84,16 +90,9 @@ func _ready() -> void:
 	add_to_group("enemies")
 	collision_layer = GameConfig.L_ENEMIES
 	collision_mask = GameConfig.MASK_ENEMY_BODY
-	var s := 1.0
-	match kind:
-		Kind.BRUTE:
-			puppet.build(Puppet.Kind.ZOMBIE, Color(0.5, 0.16, 0.12), Color(0.58, 0.42, 0.36))
-			s = 1.35
-		Kind.HUGGER:
-			puppet.build(Puppet.Kind.ZOMBIE, Color(0.78, 0.66, 0.18), Color(0.72, 0.78, 0.36))
-			s = 0.7
-		_:
-			puppet.build(Puppet.Kind.ZOMBIE, Color.WHITE)
+	var st := Zombie.style(kind)
+	puppet.build(Puppet.Kind.ZOMBIE, st["shirt"], st["skin"])
+	var s: float = st["scale"]
 	puppet.scale = Vector3.ONE * s
 	body_shape.scale = Vector3.ONE * s
 	body_shape.position.y = 0.85 * s
@@ -111,6 +110,20 @@ func _ready() -> void:
 func _exit_tree() -> void:
 	if multiplayer.is_server():
 		_release_latch()
+
+
+## Look of each kind (also used for the death ragdoll): shirt colour, skin colour (alpha 0 = default), body scale.
+static func style(k: int) -> Dictionary:
+	match k:
+		Kind.BRUTE:
+			return {"shirt": Color(0.5, 0.16, 0.12), "skin": Color(0.58, 0.42, 0.36), "scale": 1.35}
+		Kind.HUGGER:
+			return {"shirt": Color(0.78, 0.66, 0.18), "skin": Color(0.72, 0.78, 0.36), "scale": 0.7}
+		Kind.LEAPER:
+			return {"shirt": Color(0.75, 0.25, 0.3), "skin": Color(0.82, 0.5, 0.42), "scale": 0.9}
+		Kind.BLOATER:
+			return {"shirt": Color(0.45, 0.6, 0.2), "skin": Color(0.62, 0.78, 0.35), "scale": 1.25}
+	return {"shirt": Color.WHITE, "skin": Color(0, 0, 0, 0), "scale": 1.0}
 
 
 static func find_by_id(tree: SceneTree, id: int) -> Zombie:
@@ -146,6 +159,7 @@ func _set_state(v: int) -> void:
 		return
 	var down := v == State.FALLEN
 	puppet.set_downed(down)
+	puppet.set_dancing(v == State.DANCE)
 	body_shape.set_deferred("disabled", down)
 	fallen_shape.set_deferred("disabled", not down)
 	if down and was != State.FALLEN:
@@ -162,6 +176,8 @@ func _physics_process(delta: float) -> void:
 	_attack_cd = maxf(_attack_cd - delta, 0.0)
 	_trip_cd = maxf(_trip_cd - delta, 0.0)
 	_charge_cd = maxf(_charge_cd - delta, 0.0)
+	_leap_cd = maxf(_leap_cd - delta, 0.0)
+	_bowl_cd = maxf(_bowl_cd - delta, 0.0)
 	if _latched != null:
 		_tick_latched(delta)
 		return
@@ -174,9 +190,14 @@ func _physics_process(delta: float) -> void:
 	elif _getup_left > 0.0:
 		_getup_left -= delta
 		state = State.STAGGER
+	elif _dance_left > 0.0:
+		_dance_left -= delta
+		state = State.DANCE
 	elif _stagger > 0.0:
 		_stagger -= delta
 		state = State.STAGGER
+	elif _leap_left > 0.0:
+		desired = _tick_leap(delta)
 	elif _windup > 0.0:
 		_windup -= delta
 		state = State.ATTACK
@@ -187,9 +208,12 @@ func _physics_process(delta: float) -> void:
 				rotation.y = lerp_angle(rotation.y, _yaw_to(to), 1.0 - exp(-12.0 * delta))
 				_charge_dir = to.normalized()
 		if _windup <= 0.0:
-			_charge_left = GameConfig.BRUTE_CHARGE_TIME
-			_charge_hit.clear()
-			fx_roar.rpc()
+			if kind == Kind.LEAPER:
+				_begin_leap()
+			else:
+				_charge_left = GameConfig.BRUTE_CHARGE_TIME
+				_charge_hit.clear()
+				fx_roar.rpc()
 	elif _charge_left > 0.0:
 		desired = _tick_charge(delta)
 	elif _swing_left > 0.0:
@@ -263,6 +287,12 @@ func _chase(delta: float) -> Vector3:
 		_windup = GameConfig.BRUTE_CHARGE_WINDUP
 		_charge_cd = GameConfig.BRUTE_CHARGE_COOLDOWN
 		_charge_dir = to.normalized()
+		return Vector3.ZERO
+	if kind == Kind.LEAPER and _leap_cd <= 0.0 and d > GameConfig.LEAPER_MIN and d < GameConfig.LEAPER_MAX and _clear_line(tp):
+		_windup = GameConfig.LEAPER_WINDUP
+		_leap_cd = GameConfig.LEAPER_COOLDOWN
+		_charge_dir = to.normalized()
+		fx_attack.rpc()
 		return Vector3.ZERO
 	if d <= GameConfig.ZOMBIE_ATTACK_RANGE - 0.15 and kind != Kind.HUGGER:
 		rotation.y = lerp_angle(rotation.y, _yaw_to(to), 1.0 - exp(-12.0 * delta))
@@ -371,7 +401,14 @@ func _yaw_to(dir: Vector3) -> float:
 
 
 func damage_amount() -> int:
-	return GameConfig.BRUTE_DAMAGE if kind == Kind.BRUTE else GameConfig.ZOMBIE_DAMAGE
+	match kind:
+		Kind.BRUTE:
+			return GameConfig.BRUTE_DAMAGE
+		Kind.LEAPER:
+			return GameConfig.LEAPER_DAMAGE
+		Kind.BLOATER:
+			return GameConfig.BLOATER_DAMAGE
+	return GameConfig.ZOMBIE_DAMAGE
 
 
 func _begin_swing(swing_kind: int) -> void:
@@ -432,6 +469,64 @@ func _tick_charge(delta: float) -> Vector3:
 				fx_bonk.rpc()
 				break
 	return _charge_dir * GameConfig.BRUTE_CHARGE_SPEED if _charge_left > 0.0 else Vector3.ZERO
+
+
+# --- leaper -------------------------------------------------------------------------------------------
+
+func _begin_leap() -> void:
+	var dist := 5.0
+	if _target != null and is_instance_valid(_target):
+		var to := _target.global_position - global_position
+		to.y = 0.0
+		dist = to.length()
+		if dist > 0.1:
+			_charge_dir = to.normalized()
+	_leap_vel = _charge_dir * clampf(dist / 0.68, 4.0, 11.0)
+	velocity.y = 5.5
+	_leap_left = 1.0
+	_leap_hit = false
+	state = State.LEAP
+	fx_roar.rpc()
+
+
+func _tick_leap(delta: float) -> Vector3:
+	_leap_left -= delta
+	state = State.LEAP
+	rotation.y = _yaw_to(_leap_vel)
+	if not _leap_hit:
+		for p in Net.all_players():
+			var d := p.global_position - global_position
+			d.y = 0.0
+			if p.status == Player.Status.ALIVE and d.length() < 1.2 and absf(p.global_position.y - global_position.y) < 1.6:
+				_leap_hit = true
+				p.srv_take_damage(damage_amount(), global_position)
+				p.srv_launch(_charge_dir * 5.0 + Vector3.UP * 3.0, 0.6) # pounced: bowled over
+				break
+	if is_on_floor() and _leap_left < 0.9 or _leap_left <= 0.0:
+		_leap_left = 0.0
+		srv_trip(_charge_dir * 2.0) # lands in a heap, hit or miss
+		_fall_left = 1.0 if _leap_hit else _fall_left # a hit leaves it dazed for less time than a faceplant
+		return Vector3.ZERO
+	return _leap_vel
+
+
+# --- bloater -----------------------------------------------------------------------------------------
+
+func _burst() -> void:
+	Fx.goo_burst.rpc(global_position)
+	for p in Net.all_players():
+		var d := p.global_position - global_position
+		d.y = 0.0
+		if p.status == Player.Status.ALIVE and d.length() < GameConfig.BLOATER_BURST_RADIUS:
+			p.srv_take_damage(8, global_position)
+			p.srv_launch(d.normalized() * 9.0 + Vector3.UP * 4.0, 0.7)
+	for n in get_tree().get_nodes_in_group("enemies"):
+		var o := n as Zombie
+		if o != null and o != self and not o.is_dead():
+			var d := o.global_position - global_position
+			d.y = 0.0
+			if d.length() < GameConfig.BLOATER_BURST_RADIUS:
+				o.srv_trip(d.normalized() * 5.0)
 
 
 # --- hugger ------------------------------------------------------------------------------------------
@@ -495,9 +590,50 @@ func srv_trip(push: Vector3 = Vector3.ZERO) -> void:
 	_swing = Swing.NONE
 	_windup = 0.0
 	_charge_left = 0.0
+	_leap_left = 0.0
+	_dance_left = 0.0
 	_trip_cd = GameConfig.TRIP_COOLDOWN + _fall_left
 	add_knock(push)
 	state = State.FALLEN
+
+
+## Disco Blaster: the zombie dances instead of attacking for a few seconds.
+func srv_dance(seconds: float) -> void:
+	if _dead:
+		return
+	if _latched != null:
+		_unlatch(0.0)
+	_dance_left = minf(seconds, 1.5) if kind == Kind.BRUTE else seconds
+	_swing_left = 0.0
+	_swing = Swing.NONE
+	_windup = 0.0
+	_charge_left = 0.0
+	_leap_left = 0.0
+	state = State.DANCE
+
+
+## Yank Gun: reeled in toward the shooter, tumbling.
+func srv_yank(origin: Vector3) -> void:
+	if _dead:
+		return
+	if _latched != null:
+		_unlatch(0.5)
+	var to := origin - global_position
+	to.y = 0.0
+	add_knock(to.normalized() * minf(to.length() * 2.4 + 4.0, 14.0) * (0.5 if kind == Kind.BRUTE else 1.0))
+	srv_trip(Vector3.ZERO)
+
+
+## A fast-flying player (thrown, shoved, blown up) ploughs into this zombie.
+func srv_bowled(dir: Vector3, source: Player) -> void:
+	if _dead or _bowl_cd > 0.0:
+		return
+	_bowl_cd = 1.0
+	if _latched != null:
+		_unlatch(1.0)
+	add_knock(dir * 6.0)
+	srv_trip(dir * 6.0)
+	srv_hit(GameConfig.BOWLING_DAMAGE, Vector3.ZERO, 0.0, source)
 
 
 func srv_hit(damage: int, knock: Vector3, stagger: float, source: Player) -> void:
@@ -547,6 +683,8 @@ func _die(source: Player) -> void:
 	if source != null and is_instance_valid(source):
 		source.kills += 1
 		source.weapons.srv_notify_kill()
+	if kind == Kind.BLOATER:
+		_burst()
 	Fx.srv_try_snack(global_position, kind)
 	Fx.enemy_died.rpc(global_position, rotation.y, _knock * 1.4 + Vector3(0, 3.0, 0), kind)
 	died.emit(self)
@@ -569,7 +707,7 @@ func _process(delta: float) -> void:
 			global_position = global_position.lerp(sync_pos, k)
 		rotation.y = lerp_angle(rotation.y, sync_yaw, k)
 		spd = sync_speed
-	puppet.animate(delta, spd * 1.4, false)
+	puppet.animate(delta, spd * 1.4, state == State.LEAP)
 	_groan_timer -= delta
 	if _groan_timer <= 0.0:
 		_groan_timer = randf_range(4.0, 9.0)

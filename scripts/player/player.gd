@@ -46,8 +46,6 @@ var hugged := 0 ## how many Huggers are clinging to me (slows me down)
 var interact_kind: int = Interact.NONE
 var interact_target := 0
 var _invuln := 0.0
-var _since_hit := 99.0
-var _regen_accum := 0.0
 var _last_shove := -99.0
 
 # --- local (owner) state ---
@@ -191,7 +189,10 @@ func _gather_input() -> void:
 	i.shove = Input.is_action_just_pressed("shove")
 	i.interact_held = Input.is_action_pressed("interact")
 	i.grab_held = Input.is_action_pressed("grab")
-	i.weapon_slot = 0 if Input.is_action_just_pressed("weapon_1") else (1 if Input.is_action_just_pressed("weapon_2") else -1)
+	i.weapon_slot = -1
+	for w in 4:
+		if Input.is_action_just_pressed("weapon_%d" % (w + 1)):
+			i.weapon_slot = w
 	i.weapon_cycle = 1 if Input.is_action_just_pressed("weapon_next") else (-1 if Input.is_action_just_pressed("weapon_prev") else 0)
 
 
@@ -243,7 +244,11 @@ func _speed_multiplier() -> float:
 
 func _tick_alive(delta: float) -> void:
 	var on_floor := is_on_floor()
+	var carrying := is_carrying()
+	weapons.locked = carrying # both hands are full
 	weapons.tick(delta, input)
+	if carrying and input.fire_pressed:
+		_do_throw()
 	if input.shove and shove_cd <= 0.0 and grabbing == 0:
 		_do_shove()
 	_update_grab_input()
@@ -273,8 +278,25 @@ func _tick_alive(delta: float) -> void:
 		velocity.y -= GameConfig.GRAVITY * delta
 
 
+## True while I am holding a downed teammate in my arms (grabbing someone who is on the floor).
+func is_carrying() -> bool:
+	if grabbing == 0 or status != Status.ALIVE:
+		return false
+	var t := Net.get_player(grabbing)
+	return t != null and t.status == Status.DOWNED
+
+
 func _tick_downed(delta: float) -> void:
+	weapons.locked = false
 	weapons.tick(delta, input)
+	if grabbed_by != 0:
+		var g := Net.get_player(grabbed_by)
+		if g != null and g.grabbing == peer_id and g.status == Status.ALIVE:
+			# carried: locked into the carrier's arms, until they put me down or throw me
+			var fwd := Basis(Vector3.UP, g.rotation.y) * Vector3(0, 0, -1)
+			global_position = g.global_position + fwd * 0.7 + Vector3(0, 1.0, 0)
+			velocity = Vector3.ZERO
+			return
 	var wish := Basis(Vector3.UP, yaw) * Vector3(input.move.x, 0.0, input.move.y)
 	var target := Vector2(wish.x, wish.z) * GameConfig.CRAWL_SPEED
 	var accel := GameConfig.GROUND_ACCEL
@@ -395,6 +417,7 @@ func _animate_puppet(delta: float) -> void:
 	var air := false
 	var sprint := false
 	var pit := _remote_pitch
+	var stag := (sync_flags & FLAG_STAGGER) != 0
 	if is_multiplayer_authority():
 		spd = Vector2(velocity.x, velocity.z).length()
 		air = not is_on_floor()
@@ -405,7 +428,7 @@ func _animate_puppet(delta: float) -> void:
 		air = (sync_flags & FLAG_AIR) != 0
 		sprint = (sync_flags & FLAG_SPRINT) != 0
 		puppet.set_weapon(sync_weapon)
-	puppet.animate(delta, spd, air, sprint, pit)
+	puppet.animate(delta, spd, air, sprint, pit, stag)
 
 
 func _update_nametag(delta: float) -> void:
@@ -503,6 +526,14 @@ func _do_shove() -> void:
 		srv_shove.rpc_id(1, origin, dir)
 
 
+func _do_throw() -> void:
+	var dir := -Basis.from_euler(Vector3(pitch, yaw, 0.0)).z
+	if multiplayer.is_server():
+		_srv_throw(dir)
+	else:
+		srv_throw.rpc_id(1, dir)
+
+
 func _update_grab_input() -> void:
 	var want := input.grab_held and stagger_time <= 0.0
 	if want and not _grab_sent and grabbing == 0:
@@ -570,6 +601,8 @@ func _update_interactions() -> void:
 	if kind == Interact.NONE and status == Status.ALIVE:
 		if hugged > 0:
 			prompt_text = "A Hugger has you! Shove it off [F] or shoot it"
+		elif is_carrying():
+			prompt_text = "Carrying %s: [Fire] THROW them at the zombies, release [G] to put down" % Net.get_player(grabbing).player_name
 		elif grabbing == 0:
 			var gt := _find_grab_target()
 			if gt != null:
@@ -608,6 +641,12 @@ func srv_ungrab() -> void:
 
 
 @rpc("any_peer", "call_remote", "reliable")
+func srv_throw(dir: Vector3) -> void:
+	if multiplayer.is_server() and multiplayer.get_remote_sender_id() == peer_id:
+		_srv_throw(dir)
+
+
+@rpc("any_peer", "call_remote", "reliable")
 func srv_shove(origin: Vector3, dir: Vector3) -> void:
 	if multiplayer.is_server() and multiplayer.get_remote_sender_id() == peer_id:
 		_srv_shove(origin, dir)
@@ -634,6 +673,36 @@ func _srv_grab(target_peer: int) -> void:
 		return
 	grabbing = target_peer
 	t.grabbed_by = peer_id
+
+
+## Host: hurl the player I am carrying. Anything the flying player touches while it is fast gets bowled over.
+func _srv_throw(dir: Vector3) -> void:
+	if not is_carrying():
+		return
+	var t := Net.get_player(grabbing)
+	var flat := Vector3(dir.x, 0.0, dir.z)
+	flat = flat.normalized() if flat.length() > 0.01 else -global_basis.z
+	_srv_ungrab()
+	t.srv_launch(flat * GameConfig.THROW_SPEED + Vector3.UP * GameConfig.THROW_UP, 0.9)
+	fx_shove.rpc()
+
+
+## Host: a player flying through the air at speed is a bowling ball (thrown, shoved, blown up...).
+func _srv_bowling() -> void:
+	if (sync_flags & FLAG_STAGGER) == 0:
+		return
+	var v := Vector2(sync_vel.x, sync_vel.z)
+	if v.length() < GameConfig.BOWLING_MIN_SPEED:
+		return
+	var dir := Vector3(v.x, 0.0, v.y).normalized()
+	for n in get_tree().get_nodes_in_group("enemies"):
+		var z := n as Zombie
+		if z == null or z.is_dead():
+			continue
+		var off := z.global_position - global_position
+		if Vector2(off.x, off.z).length() > 1.2 or absf(off.y) > 2.4: # flat distance: a thrown player flies at head height
+			continue
+		z.srv_bowled(dir, self)
 
 
 func _srv_ungrab() -> void:
@@ -681,17 +750,9 @@ func _srv_shove(origin: Vector3, dir: Vector3) -> void:
 
 func _srv_tick(delta: float) -> void:
 	_invuln = maxf(_invuln - delta, 0.0)
-	match status:
-		Status.ALIVE:
-			_since_hit += delta
-			if hp < GameConfig.PLAYER_MAX_HP and _since_hit > GameConfig.HP_REGEN_DELAY:
-				_regen_accum += GameConfig.HP_REGEN_RATE * delta
-				var whole := int(_regen_accum)
-				if whole > 0:
-					_regen_accum -= whole
-					hp = mini(hp + whole, GameConfig.PLAYER_MAX_HP)
-		Status.DOWNED:
-			_srv_tick_downed(delta)
+	if status == Status.DOWNED:
+		_srv_tick_downed(delta)
+	_srv_bowling()
 	if grabbing != 0:
 		var t := Net.get_player(grabbing)
 		var broken := t == null or status != Status.ALIVE or t.status == Status.ELIMINATED
@@ -727,7 +788,6 @@ func srv_take_damage(amount: int, _from: Vector3 = Vector3.ZERO) -> void:
 	if status != Status.ALIVE or _invuln > 0.0 or amount <= 0:
 		return
 	hp = maxi(hp - amount, 0)
-	_since_hit = 0.0
 	if peer_id == 1:
 		_apply_hurt(amount)
 	else:
@@ -762,7 +822,6 @@ func srv_revive() -> void:
 	bleed_left = 0.0
 	revive_progress = 0.0
 	_invuln = GameConfig.INVULN_AFTER_REVIVE
-	_since_hit = 0.0
 	_notify_status()
 
 
@@ -799,13 +858,11 @@ func _notify_status() -> void:
 		cl_set_status.rpc_id(peer_id, status, hp)
 
 
-func srv_launch(vel: Vector3, stagger: float, hard: bool) -> void:
+func srv_launch(vel: Vector3, stagger: float, _hard: bool = false) -> void: # _hard is ignored: players never ragdoll, they just get knocked back
 	if peer_id == 1:
 		_apply_launch(vel, stagger)
 	else:
 		cl_launch.rpc_id(peer_id, vel, stagger)
-	if hard:
-		fx_ragdoll.rpc(vel)
 
 
 # =================================================================================================
@@ -837,16 +894,6 @@ func cl_set_status(new_status: int, new_hp: int) -> void:
 		status = new_status
 
 
-## Brief ragdoll of the *body* for observers. The owner (first person) gets camera effects instead.
-@rpc("any_peer", "call_local", "reliable")
-func fx_ragdoll(vel: Vector3) -> void:
-	var s := multiplayer.get_remote_sender_id()
-	if s != 0 and s != 1:
-		return
-	Sfx.play_at(&"launch", global_position + Vector3.UP, -4.0)
-	if is_multiplayer_authority():
-		return
-	puppet.start_ragdoll(vel, 0.9)
 
 
 @rpc("any_peer", "call_local", "unreliable")
@@ -859,6 +906,8 @@ func fx_shove() -> void:
 
 
 func _apply_launch(vel: Vector3, stagger: float) -> void:
+	if status == Status.DOWNED and grabbed_by != 0:
+		grabbed_by = 0 # thrown out of someone's arms: stop being carried right now, don't wait for the sync
 	velocity += vel
 	var h := Vector2(velocity.x, velocity.z)
 	if h.length() > GameConfig.MAX_LAUNCH_SPEED:

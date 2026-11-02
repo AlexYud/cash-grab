@@ -101,6 +101,10 @@ func _begin_wave() -> void:
 	_kind_plan.clear()
 	for i in _scaled_special(int(cfg.get("brutes", 0)), scale):
 		_kind_plan.append(Zombie.Kind.BRUTE)
+	for i in _scaled_special(int(cfg.get("leapers", 0)), scale):
+		_kind_plan.append(Zombie.Kind.LEAPER)
+	for i in _scaled_special(int(cfg.get("bloaters", 0)), scale):
+		_kind_plan.append(Zombie.Kind.BLOATER)
 	for i in _scaled_special(int(cfg.get("huggers", 0)), scale):
 		_kind_plan.append(Zombie.Kind.HUGGER)
 	var specials := _kind_plan.size()
@@ -167,6 +171,12 @@ func _spawn_one(cfg: Dictionary) -> void:
 	if zk == Zombie.Kind.BRUTE:
 		hp = int(hp * GameConfig.BRUTE_HP_MULT)
 		speed = GameConfig.BRUTE_SPEED
+	elif zk == Zombie.Kind.LEAPER:
+		hp = GameConfig.LEAPER_HP
+		speed = GameConfig.LEAPER_SPEED * randf_range(0.9, 1.1)
+	elif zk == Zombie.Kind.BLOATER:
+		hp = GameConfig.BLOATER_HP
+		speed = GameConfig.BLOATER_SPEED
 	elif zk == Zombie.Kind.HUGGER:
 		hp = GameConfig.HUGGER_HP
 		speed = GameConfig.HUGGER_SPEED * randf_range(0.9, 1.1)

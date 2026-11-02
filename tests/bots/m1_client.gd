@@ -70,7 +70,7 @@ func run() -> void:
 	var saw_damage := await wait_until(func() -> bool: return host.hp < GameConfig.PLAYER_MAX_HP, 12.0)
 	report("C: host's damage replicated to the client", saw_damage, "hp=%d" % host.hp)
 	await wait_signal("C_done", 30.0)
-	report("C: host's health regeneration replicated", host.hp == GameConfig.PLAYER_MAX_HP, "hp=%d" % host.hp)
+	report("C: the client also sees no regeneration", host.hp < GameConfig.PLAYER_MAX_HP, "hp=%d" % host.hp)
 	signal_peers("M1_done")
 	await wait(0.5)
 	finish()

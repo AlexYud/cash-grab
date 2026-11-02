@@ -69,12 +69,8 @@ func enemy_died(pos: Vector3, yaw: float, impulse: Vector3, kind: int = 0) -> vo
 		return
 	var pup := Puppet.new()
 	world.add_child(pup)
-	if kind == Zombie.Kind.BRUTE:
-		pup.build(Puppet.Kind.ZOMBIE, Color(0.5, 0.16, 0.12), Color(0.58, 0.42, 0.36))
-	elif kind == Zombie.Kind.HUGGER:
-		pup.build(Puppet.Kind.ZOMBIE, Color(0.78, 0.66, 0.18), Color(0.72, 0.78, 0.36))
-	else:
-		pup.build(Puppet.Kind.ZOMBIE, Color.WHITE)
+	var st := Zombie.style(kind)
+	pup.build(Puppet.Kind.ZOMBIE, st["shirt"], st["skin"])
 	pup.global_position = pos
 	pup.rotation.y = yaw
 	add_ragdoll(pup.get_ragdoll_parts(), impulse)
@@ -237,6 +233,10 @@ func srv_try_snack(pos: Vector3, zombie_kind: int) -> void:
 		chance = GameConfig.SNACK_CHANCE_BRUTE
 	elif zombie_kind == Zombie.Kind.HUGGER:
 		chance = GameConfig.SNACK_CHANCE_HUGGER
+	elif zombie_kind == Zombie.Kind.LEAPER:
+		chance = GameConfig.SNACK_CHANCE_LEAPER
+	elif zombie_kind == Zombie.Kind.BLOATER:
+		chance = GameConfig.SNACK_CHANCE_BLOATER
 	if Net.debug_snack_chance >= 0.0:
 		chance = Net.debug_snack_chance
 	if randf() >= chance:
@@ -316,3 +316,13 @@ func _physics_process(delta: float) -> void:
 		if eaten != 0 or float(info["left"]) <= 0.0:
 			_snack_info.erase(id)
 			snack_gone.rpc(id, eaten)
+
+
+## Bloater popping: a green splat. The push/damage is applied on the host (zombie.gd), this is only the show.
+@rpc("authority", "call_local", "reliable")
+func goo_burst(pos: Vector3) -> void:
+	if world == null:
+		return
+	_burst(pos + Vector3(0, 0.8, 0), Vector3.UP, 40, Color(0.5, 0.85, 0.2), 2.0, 7.0, 180.0, 0.9)
+	Sfx.play_at(&"explosion", pos, -8.0, 1.8)
+	camera_shake.emit(0.5, pos)

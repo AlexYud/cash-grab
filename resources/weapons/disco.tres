@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="WeaponData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/weapons/weapon_data.gd" id="1_wd"]
+
+[resource]
+script = ExtResource("1_wd")
+id = &"disco"
+display_name = "Disco Blaster"
+damage = 3.0
+pellets = 8
+spread_deg = 9.0
+fire_interval = 1.1
+mag_size = 6
+reload_time = 2.0
+max_range = 14.0
+falloff_start = 6.0
+falloff_end = 14.0
+min_damage_frac = 0.5
+enemy_knockback = 0.0
+enemy_stagger = 0.0
+player_knockback = 0.0
+player_stagger = 0.0
+recoil_deg = 2.5
+switch_time = 0.45
+special = &"disco"

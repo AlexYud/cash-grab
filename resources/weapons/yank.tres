@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="WeaponData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/weapons/weapon_data.gd" id="1_wd"]
+
+[resource]
+script = ExtResource("1_wd")
+id = &"yank"
+display_name = "Yank Gun"
+damage = 6.0
+pellets = 1
+spread_deg = 0.3
+fire_interval = 0.9
+mag_size = 5
+reload_time = 1.8
+max_range = 28.0
+falloff_start = 28.0
+falloff_end = 29.0
+min_damage_frac = 1.0
+enemy_knockback = 0.0
+enemy_stagger = 0.0
+player_knockback = 0.0
+player_stagger = 0.0
+recoil_deg = 2.0
+switch_time = 0.4
+special = &"yank"

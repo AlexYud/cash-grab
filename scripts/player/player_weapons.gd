@@ -11,6 +11,7 @@ var player: Player
 var list: Array[WeaponData] = []
 var ammo: Array[int] = []
 var current := 0
+var locked := false ## both hands busy (carrying a teammate): no firing, reloading or switching
 var hit_marker := 0.0 ## HUD: seconds left on the hit marker
 var kill_marker := 0.0
 
@@ -30,7 +31,7 @@ var _vm_bob := 0.0
 
 func setup(p: Player) -> void:
 	player = p
-	list = [load("res://resources/weapons/pistol.tres"), load("res://resources/weapons/shotgun.tres")]
+	list = [load("res://resources/weapons/pistol.tres"), load("res://resources/weapons/shotgun.tres"), load("res://resources/weapons/yank.tres"), load("res://resources/weapons/disco.tres")]
 	for w in list:
 		ammo.append(w.mag_size)
 	_build_viewmodel()
@@ -76,6 +77,9 @@ func tick(delta: float, inp: PlayerInputState) -> void:
 		if _reload_left <= 0.0:
 			ammo[current] = list[current].mag_size
 
+	if locked:
+		_buffered = 0.0
+		return
 	if player.status == Player.Status.ALIVE:
 		var want := current
 		if inp.weapon_slot >= 0 and inp.weapon_slot < list.size():
@@ -244,9 +248,22 @@ func _srv_hits(weapon_idx: int, origin: Vector3, hits: Array) -> void:
 					continue
 				var dmg := int(round(w.damage_at(dist) * pellets))
 				z.srv_hit(dmg, dir * w.enemy_knockback * pellets, w.enemy_stagger, player)
+				if not z.is_dead():
+					if w.special == &"yank":
+						z.srv_yank(origin)
+					elif w.special == &"disco":
+						z.srv_dance(3.0)
 			Hit.PLAYER:
 				var p := Net.get_player(id)
 				if p == null or p == player or p.status == Player.Status.ELIMINATED:
+					continue
+				if w.special == &"yank": # reel the teammate in to the shooter
+					var to := player.global_position - p.global_position
+					to.y = 0.0
+					p.srv_launch(to.normalized() * minf(to.length() * 2.2 + 3.0, 13.0) + Vector3.UP * 3.0, 0.6)
+					continue
+				if w.special == &"disco": # a little hop
+					p.srv_launch(Vector3.UP * 6.0, 0.4)
 					continue
 				var flat := Vector3(dir.x, 0.0, dir.z)
 				flat = flat.normalized() if flat.length() > 0.01 else Vector3.FORWARD
@@ -303,6 +320,26 @@ func _build_viewmodel() -> void:
 	_box(shotgun, Vector3(0.08, 0.08, 0.09), Vector3(0, -0.04, -0.28), skin)
 	_muzzles.append(_marker(shotgun, Vector3(0, 0.02, -0.63)))
 	_guns.append(shotgun)
+
+	var yank := Node3D.new() # a tube with a big rubber plunger on the end
+	yank.name = "YankGun"
+	_viewmodel.add_child(yank)
+	_box(yank, Vector3(0.07, 0.07, 0.42), Vector3(0, 0.0, -0.2), Color(0.1, 0.5, 0.55))
+	_box(yank, Vector3(0.05, 0.1, 0.1), Vector3(0, -0.08, -0.06), dark)
+	_box(yank, Vector3(0.16, 0.16, 0.06), Vector3(0, 0.0, -0.44), Color(0.85, 0.15, 0.12))
+	_box(yank, Vector3(0.08, 0.08, 0.09), Vector3(0, -0.06, -0.08), skin)
+	_muzzles.append(_marker(yank, Vector3(0, 0.0, -0.5)))
+	_guns.append(yank)
+
+	var disco := Node3D.new() # chunky purple blaster with a mirror ball on top
+	disco.name = "DiscoBlaster"
+	_viewmodel.add_child(disco)
+	_box(disco, Vector3(0.13, 0.11, 0.34), Vector3(0, 0.0, -0.18), Color(0.55, 0.2, 0.75))
+	_box(disco, Vector3(0.1, 0.1, 0.1), Vector3(0, 0.1, -0.2), Color(0.85, 0.88, 0.95))
+	_box(disco, Vector3(0.05, 0.1, 0.07), Vector3(0, -0.09, -0.06), dark)
+	_box(disco, Vector3(0.08, 0.08, 0.09), Vector3(0, -0.06, -0.08), skin)
+	_muzzles.append(_marker(disco, Vector3(0, 0.0, -0.37)))
+	_guns.append(disco)
 	_refresh_viewmodel()
 
 

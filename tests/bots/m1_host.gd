@@ -10,6 +10,7 @@ func run() -> void:
 		finish()
 		return
 	var client := other_player()
+	Net.debug_snack_chance = 0.0 # a random snack drop would heal and spoil the no-regen check
 	await wait(2.0)
 	var wm := wave_manager()
 
@@ -54,8 +55,8 @@ func run() -> void:
 		t += get_physics_process_delta_time()
 	player.input.fire_held = false
 	report("C: host killed the zombie with its own gun", player.kills == kills_before + 1, "kills=%d" % player.kills)
-	var regen := await wait_until(func() -> bool: return player.hp == GameConfig.PLAYER_MAX_HP, 12.0)
-	report("C: health regenerates out of combat", regen, "hp=%d" % player.hp)
+	await wait(7.0) # old rule: health came back after 5 s out of combat; that was removed
+	report("C: health does NOT regenerate on its own", player.hp < GameConfig.PLAYER_MAX_HP, "hp=%d" % player.hp)
 	signal_peers("C_done")
 	await wait_signal("M1_done", 20.0)
 	finish()

@@ -14,6 +14,7 @@ const ZOMBIE_ATTACK_TIME := 0.55
 
 var kind: int = Kind.PLAYER
 var downed := false
+var dancing := false
 var holding_gun := true
 var body: Node3D
 var _parts: Array[Dictionary] = []
@@ -22,8 +23,7 @@ var _arm_r: Node3D
 var _leg_l: Node3D
 var _leg_r: Node3D
 var _head: Node3D
-var _gun_pistol: Node3D
-var _gun_shotgun: Node3D
+var _guns: Array[Node3D] = []
 var _mats: Array[StandardMaterial3D] = []
 var _phase := 0.0
 var _t := 0.0
@@ -87,8 +87,10 @@ func build(p_kind: int, shirt: Color, skin_override: Color = Color(0, 0, 0, 0)) 
 			hand.position = Vector3(0, -0.28, 0)
 
 	if not zombie:
-		_gun_pistol = _make_gun(_arm_r, Vector3(0.05, 0.28, 0.07), -0.56, Color(0.15, 0.15, 0.17))
-		_gun_shotgun = _make_gun(_arm_r, Vector3(0.06, 0.78, 0.08), -0.78, Color(0.35, 0.22, 0.12))
+		_guns.append(_make_gun(_arm_r, Vector3(0.05, 0.28, 0.07), -0.56, Color(0.15, 0.15, 0.17)))
+		_guns.append(_make_gun(_arm_r, Vector3(0.06, 0.78, 0.08), -0.78, Color(0.35, 0.22, 0.12)))
+		_guns.append(_make_gun(_arm_r, Vector3(0.1, 0.55, 0.1), -0.7, Color(0.1, 0.5, 0.55)))
+		_guns.append(_make_gun(_arm_r, Vector3(0.12, 0.4, 0.12), -0.64, Color(0.55, 0.2, 0.75)))
 		set_weapon(0)
 
 
@@ -147,18 +149,22 @@ func _make_gun(arm: Node3D, size: Vector3, y: float, color: Color) -> Node3D:
 # --- public API ------------------------------------------------------------------------------
 
 func set_weapon(idx: int) -> void:
-	if _gun_pistol == null:
-		return
-	_gun_pistol.visible = idx == 0
-	_gun_shotgun.visible = idx == 1
+	for i in _guns.size():
+		_guns[i].visible = i == idx
 
 
 ## World position of the active gun's muzzle (for tracers / flashes seen on remote players).
 func muzzle_position(weapon_idx: int) -> Vector3:
-	var g := _gun_shotgun if weapon_idx == 1 else _gun_pistol
-	if g == null:
+	if _guns.is_empty():
 		return global_position + Vector3(0, 1.4, 0)
+	var g := _guns[clampi(weapon_idx, 0, _guns.size() - 1)]
 	return (g.get_node("Muzzle") as Node3D).global_position
+
+
+func set_dancing(v: bool) -> void:
+	dancing = v
+	if not v:
+		body.rotation.z = 0.0
 
 
 func set_downed(v: bool) -> void:
@@ -177,7 +183,7 @@ func play_hurt() -> void:
 	_hurt_t = 0.18
 
 
-func animate(delta: float, speed: float, airborne: bool, sprinting: bool = false, aim_pitch: float = 0.0) -> void:
+func animate(delta: float, speed: float, airborne: bool, sprinting: bool = false, aim_pitch: float = 0.0, staggered: bool = false) -> void:
 	if _ragdoll_left > 0.0:
 		return
 	_t += delta
@@ -198,11 +204,15 @@ func animate(delta: float, speed: float, airborne: bool, sprinting: bool = false
 		lean = deg_to_rad(12.0)
 	if _shove_t > 0.0:
 		lean += deg_to_rad(14.0) * sin(_shove_t / 0.3 * PI)
+	if staggered and not downed:
+		lean -= deg_to_rad(18.0) # knocked back: reeling, arms flailing
 	var k := 1.0 - exp(-14.0 * delta)
 	_body_y = lerpf(_body_y, target_y, k)
 	_body_pitch = lerpf(_body_pitch, target_pitch + (0.0 if downed else lean), k)
 	body.position.y = _body_y + (0.0 if downed else sin(_t * 2.0) * 0.004)
 	body.rotation.x = _body_pitch
+	if not dancing:
+		body.rotation.z = lerpf(body.rotation.z, sin(_t * 16.0) * 0.2 if (staggered and not downed) else 0.0, k)
 
 	var leg_amp := 0.65
 	_leg_l.rotation.x = swing * leg_amp
@@ -213,7 +223,14 @@ func animate(delta: float, speed: float, airborne: bool, sprinting: bool = false
 	_head.rotation.x = 0.0 if downed else clampf(aim_pitch, -0.9, 0.9)
 	var aim := clampf(aim_pitch, -0.9, 0.9)
 
-	if downed:
+	if dancing:
+		_arm_l.rotation.x = deg_to_rad(165.0) + sin(_t * 13.0) * 0.5
+		_arm_r.rotation.x = deg_to_rad(165.0) - sin(_t * 13.0) * 0.5
+		_leg_l.rotation.x = sin(_t * 9.0) * 0.5
+		_leg_r.rotation.x = -sin(_t * 9.0) * 0.5
+		body.rotation.z = sin(_t * 9.0) * 0.28
+		body.position.y = _body_y + absf(sin(_t * 9.0)) * 0.08
+	elif downed:
 		var crawl := sin(_phase * 0.9)
 		_arm_l.rotation.x = deg_to_rad(160.0) + crawl * 0.35 * amp
 		_arm_r.rotation.x = deg_to_rad(160.0) - crawl * 0.35 * amp
@@ -230,7 +247,10 @@ func animate(delta: float, speed: float, airborne: bool, sprinting: bool = false
 		_arm_l.rotation.x = a
 		_arm_r.rotation.x = a - 0.08
 	else:
-		if _shove_t > 0.0:
+		if staggered:
+			_arm_l.rotation.x = deg_to_rad(120.0) + sin(_t * 16.0) * 0.7
+			_arm_r.rotation.x = deg_to_rad(120.0) - sin(_t * 16.0) * 0.7
+		elif _shove_t > 0.0:
 			var s := sin(_shove_t / 0.3 * PI)
 			_arm_l.rotation.x = deg_to_rad(70.0 + 35.0 * s)
 			_arm_r.rotation.x = deg_to_rad(85.0 + 25.0 * s)

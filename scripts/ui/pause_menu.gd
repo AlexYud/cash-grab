@@ -73,7 +73,7 @@ func _ready() -> void:
 	box.add_child(srow)
 
 	box.add_child(HSeparator.new())
-	_keys = UiKit.label("WASD move   Shift sprint   Space jump   LMB fire   R reload   1/2/wheel weapon   F shove   G hold to grab   E hold to repair / revive   V push-to-talk   M mute", 15, UiKit.DIM)
+	_keys = UiKit.label("WASD move   Shift sprint   Space jump   LMB fire   R reload   1-4/wheel weapon   F shove   G hold to grab   E hold to repair / revive   V push-to-talk   M mute", 15, UiKit.DIM)
 	_keys.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_keys.custom_minimum_size = Vector2(420, 0)
 	box.add_child(_keys)
