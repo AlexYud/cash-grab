@@ -23,6 +23,7 @@ var persona := ""
 var _steam: Object = null
 var _embedded := false
 var _mode := ""
+var _peer_methods: Array = []
 
 
 func _ready() -> void:
@@ -48,6 +49,7 @@ func _init_steam() -> void:
 		_set_status("Steam unavailable: SteamMultiplayerPeer addon is not loaded (addons/steam-multiplayer-peer).")
 		return
 	_steam = Engine.get_singleton("Steam")
+	_peer_api() # prints the peer's methods once, handy if joining misbehaves
 	var result: Variant = null
 	var used := ""
 	for fn in ["steamInitEx", "steamInit"]:
@@ -111,7 +113,36 @@ func host(player_name: String) -> void:
 	Net.local_name = player_name
 	_mode = "host"
 	_set_status("Creating Steam lobby...")
+	if not _peer_api().has("create_host") and _peer_api().has("create_lobby"):
+		# GodotSteam's own peer owns the lobby: it creates it and tells us the id through a signal
+		var peer: MultiplayerPeer = ClassDB.instantiate("SteamMultiplayerPeer")
+		peer.connect("lobby_created", func(result: int, id: int) -> void:
+			if result != 1:
+				_fail("Steam could not create a lobby (code %d)." % result)
+				return
+			_finish_host(peer, id))
+		var e: int = peer.create_lobby(LOBBY_PUBLIC, Net.MAX_PLAYERS)
+		if e != OK:
+			_fail("Could not create the Steam lobby (error %d)." % e)
+		return
 	_steam.createLobby(LOBBY_PUBLIC, Net.MAX_PLAYERS)
+
+
+## Names of the methods the installed SteamMultiplayerPeer has (also printed once for diagnosis).
+func _peer_api() -> Array:
+	if _peer_methods.is_empty():
+		for m in ClassDB.class_get_method_list("SteamMultiplayerPeer", true):
+			_peer_methods.append(String(m["name"]))
+		print("[STEAM] SteamMultiplayerPeer methods: ", _peer_methods)
+	return _peer_methods
+
+
+func _finish_host(peer: MultiplayerPeer, id: int) -> void:
+	lobby_id = id
+	_steam.setLobbyData(id, "game", GAME_KEY)
+	_steam.setLobbyData(id, "name", Net.local_name)
+	Net.adopt_host_peer(peer, Net.local_name)
+	_set_status("Hosting on Steam. Lobby ID: %d" % id)
 
 
 func _on_lobby_created(connect_result: int, id: int) -> void:
@@ -120,16 +151,12 @@ func _on_lobby_created(connect_result: int, id: int) -> void:
 	if connect_result != 1:
 		_fail("Steam could not create a lobby (code %d)." % connect_result)
 		return
-	lobby_id = id
-	_steam.setLobbyData(id, "game", GAME_KEY)
-	_steam.setLobbyData(id, "name", Net.local_name)
 	var peer: MultiplayerPeer = ClassDB.instantiate("SteamMultiplayerPeer")
 	var err: int = peer.create_host(0)
 	if err != OK:
 		_fail("Could not start Steam networking (error %d)." % err)
 		return
-	Net.adopt_host_peer(peer, Net.local_name)
-	_set_status("Hosting on Steam. Lobby ID: %d" % id)
+	_finish_host(peer, id)
 
 
 # --- joining ---------------------------------------------------------------------------------------
@@ -138,6 +165,16 @@ func join(id: int, player_name: String) -> void:
 	if not _ready_check():
 		return
 	Net.local_name = player_name
+	if not _peer_api().has("create_client") and _peer_api().has("connect_lobby"):
+		var peer: MultiplayerPeer = ClassDB.instantiate("SteamMultiplayerPeer")
+		var e: int = peer.connect_lobby(id)
+		if e != OK:
+			_fail("Could not join that lobby (error %d)." % e)
+			return
+		lobby_id = id
+		Net.adopt_client_peer(peer, player_name)
+		_set_status("Connecting to the host through Steam...")
+		return
 	_mode = "join"
 	_set_status("Joining Steam lobby %d..." % id)
 	_steam.joinLobby(id)
