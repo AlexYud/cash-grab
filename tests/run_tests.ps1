@@ -18,6 +18,10 @@
     m4a  late join mid-run + a player leaving while grabbing someone
     m4b  proximity voice pipeline (test tone, distance culling)
     m4c  a fifth player is turned away from a full game
+    m5   special zombies, trips, snacks, hugger
+    m6   carry + throw, Yank/Disco guns, leaper, bloater
+    m7   shared cash, headshots, ADS, invisible walls, shops, two-lever annex door, mystery box, Tesla/Boing, stumble
+    nav  navmesh reaches every window and shop spot (single process)
     soak2 / soak4  whole five-wave runs with 2 / 4 scripted players at 3x speed (god mode, so bots always finish)
 #>
 param(
@@ -40,14 +44,16 @@ $Tests = [ordered]@{
 	"m4b" = @{ Host = "m4b_host"; Clients = @("m4b_listener"); Limit = 90; Extra = @("--hold-waves"); HostExtra = @("--voice-test-tone") }
 	"m5"  = @{ Host = "m5_host"; Clients = @("m5_client"); Limit = 150; Extra = @("--hold-waves") }
 	"m6"  = @{ Host = "m6_host"; Clients = @("m6_client"); Limit = 180; Extra = @("--hold-waves") }
+	"m7"  = @{ Host = "m7_host"; Clients = @("m7_client"); Limit = 240; Extra = @("--hold-waves"); Plain = $true }
+	"nav" = @{ Host = "nav_check"; Clients = @(); Limit = 40; Extra = @("--hold-waves") }
 	"m4d" = @{ Host = "m4d_host"; Clients = @("m4d_client"); Limit = 90; Extra = @("--hold-waves") }
 	"m4c" = @{ Host = "m4c_host"; Clients = @("m4c_filler", "m4c_filler", "m4c_filler", @{ Bot = ""; Delay = 8; Args = @("--expect-join-fail") }); Autostart = 4; Limit = 120; Extra = @("--hold-waves") }
 	# whole 5-wave runs with scripted players (3x game speed); passing means VICTORY with no script errors
-	"soak2" = @{ Host = "soak"; Clients = @("soak"); Limit = 900; Extra = @("--time-scale=3", "--god") }
-	"soak4" = @{ Host = "soak"; Clients = @("soak", "soak", "soak"); Limit = 900; Extra = @("--time-scale=3", "--god") }
+	"soak2" = @{ Host = "soak"; Clients = @("soak"); Limit = 2800; Extra = @("--time-scale=3", "--god") }
+	"soak4" = @{ Host = "soak"; Clients = @("soak", "soak", "soak"); Limit = 2800; Extra = @("--time-scale=3", "--god") }
 	# informational, not part of `all`: the same bots without god mode. It is a difficulty probe, so it may fail.
-	"hard2" = @{ Host = "soak"; Clients = @("soak"); Limit = 900; Extra = @("--time-scale=3"); Informational = $true }
-	"hard4" = @{ Host = "soak"; Clients = @("soak", "soak", "soak"); Limit = 900; Extra = @("--time-scale=3"); Informational = $true }
+	"hard2" = @{ Host = "soak"; Clients = @("soak"); Limit = 2800; Extra = @("--time-scale=3"); Informational = $true }
+	"hard4" = @{ Host = "soak"; Clients = @("soak", "soak", "soak"); Limit = 2800; Extra = @("--time-scale=3"); Informational = $true }
 }
 
 function Get-FreeUdpPort {
@@ -69,6 +75,7 @@ foreach ($name in $names) {
 	$t = $Tests[$name]
 	$port = Get-FreeUdpPort
 	$extra = @(); if ($t.Extra) { $extra = $t.Extra }
+	if (-not $t.Plain) { $extra += "--all-weapons" } # tests of the weapon-shop rules set Plain = $true
 	$hostExtra = @(); if ($t.HostExtra) { $hostExtra = $t.HostExtra }
 	$clientExtra = @(); if ($t.ClientExtra) { $clientExtra = $t.ClientExtra }
 	$autostart = if ($t.Autostart) { $t.Autostart } else { 1 + $t.Clients.Count }

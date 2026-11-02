@@ -31,12 +31,20 @@ var _orbit := 0.0
 
 
 func _ready() -> void:
-	for pair in [["weapon_3", KEY_3], ["weapon_4", KEY_4]]: # registered here so project.godot does not need to change
+	for pair in [["weapon_3", KEY_3], ["weapon_4", KEY_4], ["weapon_5", KEY_5], ["weapon_6", KEY_6]]: # registered here so project.godot does not need to change
 		if not InputMap.has_action(pair[0]):
 			InputMap.add_action(pair[0])
 			var ev := InputEventKey.new()
 			ev.physical_keycode = pair[1]
 			InputMap.action_add_event(pair[0], ev)
+	if not InputMap.has_action("ads"):
+		InputMap.add_action("ads")
+		var rmb := InputEventMouseButton.new()
+		rmb.button_index = MOUSE_BUTTON_RIGHT
+		InputMap.action_add_event("ads", rmb)
+	var saved := UiKit.load_settings() # volume and mouse sensitivity survive closing the game
+	Net.sens_scale = float(saved.get_value("audio", "sensitivity", 1.0))
+	AudioServer.set_bus_volume_db(0, linear_to_db(clampf(float(saved.get_value("audio", "master", 1.0)), 0.0001, 1.0)))
 	Fx.world = $World/Fx
 	Net.players_root = players_node
 	player_spawner.spawn_function = _spawn_player

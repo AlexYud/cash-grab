@@ -6,6 +6,7 @@ extends Node3D
 const MAX_BOARDS := 5
 
 @export var index := 0
+@export var annex := false ## an annex window: zombies only come through it once the annex is open
 
 var boards: int = MAX_BOARDS:
 	set = _set_boards
@@ -42,6 +43,14 @@ func lateral(pos: Vector3) -> float:
 
 func is_inside(pos: Vector3) -> bool:
 	return distance_outside(pos) < -0.5
+
+
+## Whether zombies may spawn for this entrance right now.
+func is_active() -> bool:
+	if not annex:
+		return true
+	var a := get_tree().get_first_node_in_group("annex") as Annex
+	return a != null and a.is_open
 
 
 func slot_position(i: int) -> Vector3:
@@ -102,6 +111,9 @@ func _physics_process(delta: float) -> void:
 		repair_progress = 0.0
 		_damage_accum = 0.0
 		boards += 1
+		var wm := get_tree().get_first_node_in_group("wave_manager") as WaveManager
+		if wm != null:
+			wm.srv_add_cash(GameConfig.CASH_PER_BOARD)
 
 
 # --- visuals (run on every peer when `boards` changes) -------------------------------------------------

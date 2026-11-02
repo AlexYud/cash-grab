@@ -10,10 +10,11 @@ const L_BARRICADES := 8
 const L_RAGDOLLS := 16
 const L_PROPS := 32
 const L_HUG := 64 ## a Hugger clinging to a player: shootable, but does not push the player around
+const L_PLAYER_WALL := 128 ## invisible wall that only players collide with (keeps them inside, zombies pass)
 
 # Players do not collide with each other (no body blocking in doorways); zombies do not
 # collide with each other (soft separation instead) so queues at barricades never jam.
-const MASK_PLAYER_BODY := L_WORLD | L_ENEMIES | L_BARRICADES | L_PROPS
+const MASK_PLAYER_BODY := L_WORLD | L_ENEMIES | L_BARRICADES | L_PROPS | L_PLAYER_WALL
 const MASK_ENEMY_BODY := L_WORLD | L_PLAYERS | L_BARRICADES | L_PROPS
 const MASK_HITSCAN := L_WORLD | L_PLAYERS | L_ENEMIES | L_PROPS | L_HUG
 const MASK_RAGDOLL := L_WORLD | L_PROPS
@@ -159,3 +160,38 @@ const THROW_SPEED := 15.0
 const THROW_UP := 5.5
 const BOWLING_MIN_SPEED := 6.5 ## a flying player faster than this knocks zombies over
 const BOWLING_DAMAGE := 25
+
+# --- Headshots, aiming down sights, stumbling on fallen zombies ---
+const HEADSHOT_MULT := 2.0 ## critical damage, not an instant kill
+const HEAD_HEIGHT := 1.38 ## metres above a zombie's feet (scaled with its size) where the head starts
+const ADS_FOV := 52.0
+const ADS_SPREAD_MULT := 0.35
+const ADS_SPEED_MULT := 0.65
+const STUMBLE_RANGE := 1.7 ## a fallen zombie's body stops you at ~1.25 m head-on, so the trip must fire before contact
+const STUMBLE_MIN_SPEED := 2.0
+const STUMBLE_STAGGER := 1.0
+const STUMBLE_COOLDOWN := 2.5
+
+# --- Shared cash: one pot for the whole team ---
+const CASH_KILL := 10
+const CASH_KILL_SPECIAL := 25
+const CASH_HEADSHOT_BONUS := 5
+const CASH_PER_BOARD := 5
+
+# --- The annex (levers, door, shops) ---
+const LEVER_COST := 250
+const LEVER_HOLD := 1.5
+const LEVER_CANCEL_HOLD := 0.5 ## hold time to put a latched lever back
+const LEVER_WINDOW := 20.0 ## after the first lever is pulled, this long to pull the other one (else refunded)
+const DOOR_TIME := 4.0
+const BOX_COST := 400
+const BOX_HOLD := 1.0
+const BANDAGE_COST := 75
+const BANDAGE_HEAL := 25
+const MEDKIT_COST := 250
+const SHOP_HOLD := 0.8
+const SHOP_COOLDOWN := 30.0
+
+# --- Tesla gun ---
+const TESLA_RANGE := 5.5
+const TESLA_FALLOFF: Array[float] = [0.6, 0.4, 0.25] ## damage fraction on each chained zombie

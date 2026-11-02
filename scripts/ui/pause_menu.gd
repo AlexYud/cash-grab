@@ -56,7 +56,9 @@ func _ready() -> void:
 	vol.step = 0.05
 	vol.value = db_to_linear(AudioServer.get_bus_volume_db(0))
 	vol.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	vol.value_changed.connect(func(v: float) -> void: AudioServer.set_bus_volume_db(0, linear_to_db(maxf(v, 0.0001))))
+	vol.value_changed.connect(func(v: float) -> void:
+		AudioServer.set_bus_volume_db(0, linear_to_db(maxf(v, 0.0001)))
+		UiKit.save_setting("audio", "master", v))
 	vrow.add_child(vol)
 	box.add_child(vrow)
 
@@ -68,7 +70,9 @@ func _ready() -> void:
 	sens.step = 0.05
 	sens.value = Net.sens_scale
 	sens.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	sens.value_changed.connect(func(v: float) -> void: Net.sens_scale = v)
+	sens.value_changed.connect(func(v: float) -> void:
+		Net.sens_scale = v
+		UiKit.save_setting("audio", "sensitivity", v))
 	srow.add_child(sens)
 	box.add_child(srow)
 

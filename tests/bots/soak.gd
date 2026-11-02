@@ -15,13 +15,16 @@ func run() -> void:
 		var wm := wave_manager()
 		wm.hold = false
 		wm.break_left = 2.0
-	while not h.signals_seen.has("SOAK_DONE"):
+	while not h.signals_seen.has("SOAK_DONE") and is_instance_valid(player):
 		_tick += 1
 		_t += get_physics_process_delta_time()
 		_act()
 		if is_host:
 			_host_watch()
 		await get_tree().physics_frame
+	if not is_instance_valid(player):
+		finish() # the host went away first (time limit): nothing left to report
+		return
 	stop()
 	if is_host:
 		await wait(2.0)
@@ -78,6 +81,11 @@ func _act() -> void:
 
 func _host_watch() -> void:
 	var wm := wave_manager()
+	var annex := get_tree().get_first_node_in_group("annex") as Annex
+	if annex != null and wm.wave >= 3 and not annex.lever1 and not annex.is_open:
+		wm.srv_add_cash(2 * GameConfig.LEVER_COST) # the run opens the annex from wave 3 on, so the soak covers its windows too
+		annex.srv_pull(0)
+		annex.srv_pull(1)
 	if _t >= _next_report:
 		_next_report += REPORT_EVERY
 		var states := []

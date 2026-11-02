@@ -13,6 +13,7 @@ extends Node
 ##   --hold-waves                                 host: freeze the wave timer so a bot can stage its own scenario
 ##   --bleed-time=S                               shorten the downed bleed-out timer
 ##   --god                                        players take no damage (soak tests with unskilled bots)
+##   --all-weapons                                every weapon owned from the start (normally only the pistol)
 ##   --time-scale=N                               run the simulation N times faster (soak tests)
 
 var args := {}
@@ -54,6 +55,8 @@ func _ready() -> void:
 	if args.has("time-scale"):
 		Engine.time_scale = float(args["time-scale"])
 		Engine.max_physics_steps_per_frame = 16
+	if args.has("all-weapons"):
+		Net.debug_all_weapons = true
 	if args.has("god"):
 		Net.debug_god = true
 	if args.has("bleed-time"):
@@ -140,6 +143,11 @@ func finish() -> void:
 		return
 	_finished = true
 	print("[HARNESS] done passes=%d fails=%d" % [passes, fails])
+	# tear the game down first (players/zombies/ragdolls freed, peer closed); quitting with everything live
+	# sometimes hit an engine access violation on exit
+	if Net.phase != Net.Phase.MENU:
+		Net.leave("")
+	await get_tree().create_timer(0.3).timeout
 	get_tree().quit(1 if fails > 0 else 0)
 
 

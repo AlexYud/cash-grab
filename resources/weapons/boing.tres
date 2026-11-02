@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="WeaponData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/weapons/weapon_data.gd" id="1_wd"]
+
+[resource]
+script = ExtResource("1_wd")
+id = &"boing"
+display_name = "Boing Gun"
+damage = 8.0
+pellets = 1
+spread_deg = 0.5
+fire_interval = 0.7
+mag_size = 8
+reload_time = 1.8
+max_range = 30.0
+falloff_start = 30.0
+falloff_end = 31.0
+min_damage_frac = 1.0
+enemy_knockback = 0.0
+enemy_stagger = 0.0
+player_knockback = 0.0
+player_stagger = 0.0
+recoil_deg = 3.0
+switch_time = 0.4
+special = &"boing"

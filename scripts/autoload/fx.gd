@@ -326,3 +326,71 @@ func goo_burst(pos: Vector3) -> void:
 	_burst(pos + Vector3(0, 0.8, 0), Vector3.UP, 40, Color(0.5, 0.85, 0.2), 2.0, 7.0, 180.0, 0.9)
 	Sfx.play_at(&"explosion", pos, -8.0, 1.8)
 	camera_shake.emit(0.5, pos)
+
+
+# --- lightning (Tesla Gun) ------------------------------------------------------------------------------
+
+var lightning_count := 0 ## how many chains were drawn (tests read this)
+
+
+## A jagged electric arc through the given points (shooter -> first zombie -> chained zombies).
+@rpc("authority", "call_local", "unreliable")
+func lightning(points: PackedVector3Array) -> void:
+	if world == null or points.size() < 2:
+		return
+	lightning_count += 1
+	for i in points.size() - 1:
+		_arc(points[i], points[i + 1])
+	for i in range(1, points.size()):
+		var l := OmniLight3D.new()
+		l.light_color = Color(0.5, 0.8, 1.0)
+		l.light_energy = 3.0
+		l.omni_range = 5.0
+		world.add_child(l)
+		l.global_position = points[i]
+		get_tree().create_timer(0.12).timeout.connect(l.queue_free)
+		_burst(points[i], Vector3.UP, 10, Color(0.6, 0.9, 1.0), 2.0, 5.0, 180.0, 0.3)
+	Sfx.play_at(&"hit_marker", points[1], -2.0, 0.6)
+	Sfx.play_at(&"launch", points[1], -6.0, 1.8)
+
+
+func _arc(from: Vector3, to: Vector3) -> void:
+	var d := from.distance_to(to)
+	if d < 0.2:
+		return
+	var dir := (to - from) / d
+	var side := dir.cross(Vector3.UP).normalized() if absf(dir.y) < 0.95 else Vector3.RIGHT
+	var up := side.cross(dir).normalized()
+	var segs := clampi(int(d / 0.6), 3, 10)
+	var prev := from
+	for s in range(1, segs + 1):
+		var p := from.lerp(to, float(s) / segs)
+		if s < segs:
+			p += side * randf_range(-0.28, 0.28) + up * randf_range(-0.28, 0.28)
+		var mi := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = Vector3(0.05, 0.05, 1.0)
+		mi.mesh = bm
+		mi.material_override = _flash_mat_blue()
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		world.add_child(mi)
+		var seg := p - prev
+		var sl := seg.length()
+		if sl > 0.01:
+			var sd := seg / sl
+			var u := Vector3.UP if absf(sd.y) < 0.95 else Vector3.RIGHT
+			mi.global_transform = Transform3D(Basis.looking_at(sd, u), (prev + p) * 0.5)
+			mi.scale = Vector3(1, 1, sl)
+		get_tree().create_timer(0.11).timeout.connect(mi.queue_free)
+		prev = p
+
+
+var _blue_mat: StandardMaterial3D = null
+
+
+func _flash_mat_blue() -> StandardMaterial3D:
+	if _blue_mat == null:
+		_blue_mat = StandardMaterial3D.new()
+		_blue_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		_blue_mat.albedo_color = Color(0.65, 0.92, 1.0)
+	return _blue_mat

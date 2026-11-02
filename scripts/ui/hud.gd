@@ -21,8 +21,11 @@ var _vignette: TextureRect
 var _tint: ColorRect
 var _mic: Label
 var _fps: Label
+var _cash: Label
 var _cross: Control
 var _announce_tween: Tween
+var _notice: Label
+var _notice_tween: Tween
 var _team_timer := 0.0
 
 
@@ -36,6 +39,17 @@ func _ready() -> void:
 func bind(wm: WaveManager) -> void:
 	waves = wm
 	wm.announce.connect(show_announce)
+	wm.notice.connect(show_notice)
+
+
+func show_notice(text: String) -> void:
+	_notice.text = text
+	_notice.modulate.a = 1.0
+	if _notice_tween != null:
+		_notice_tween.kill()
+	_notice_tween = create_tween()
+	_notice_tween.tween_interval(2.4)
+	_notice_tween.tween_property(_notice, "modulate:a", 0.0, 0.8)
 
 
 func show_announce(text: String) -> void:
@@ -111,6 +125,12 @@ func _build() -> void:
 	_announce.add_theme_constant_override("outline_size", 8)
 	_announce.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
 	top.add_child(_announce)
+	_notice = UiKit.label("", 26, UiKit.ACCENT)
+	_notice.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_notice.modulate.a = 0.0
+	_notice.add_theme_constant_override("outline_size", 6)
+	_notice.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	top.add_child(_notice)
 
 	# interaction prompt under the crosshair
 	var pbox := VBoxContainer.new()
@@ -173,6 +193,11 @@ func _build() -> void:
 	_team.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_team)
 
+	_cash = UiKit.label("", 30, Color(0.98, 0.84, 0.3))
+	_cash.position = Vector2(20, 12)
+	_cash.add_theme_constant_override("outline_size", 6)
+	_cash.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	add_child(_cash)
 	_fps = UiKit.label("", 14, UiKit.DIM)
 	_fps.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	_fps.grow_horizontal = Control.GROW_DIRECTION_BEGIN
@@ -183,6 +208,8 @@ func _build() -> void:
 
 func _process(delta: float) -> void:
 	_fps.text = "%d fps" % Engine.get_frames_per_second()
+	if waves != null:
+		_cash.text = "$ %d" % waves.cash
 	_update_top()
 	var p := Net.local_player
 	if p == null:
@@ -208,7 +235,10 @@ func _process(delta: float) -> void:
 	_prompt.text = p.prompt_text
 	_prompt_bar.visible = p.prompt_progress >= 0.0 and p.prompt_text != ""
 	_prompt_bar.value = maxf(p.prompt_progress, 0.0)
-	if w.kill_marker > 0.0:
+	if w.head_marker > 0.0 and w.kill_marker <= 0.0:
+		_hit.add_theme_color_override("font_color", Color(1.0, 0.82, 0.2)) # gold: headshot
+		_hit.modulate.a = clampf(w.head_marker / 0.15, 0.0, 1.0)
+	elif w.kill_marker > 0.0:
 		_hit.add_theme_color_override("font_color", UiKit.BAD)
 		_hit.modulate.a = clampf(w.kill_marker / 0.2, 0.0, 1.0)
 	else:

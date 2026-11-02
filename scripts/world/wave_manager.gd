@@ -6,6 +6,7 @@ extends Node
 enum State { IDLE, BREAK, ACTIVE, VICTORY, GAME_OVER }
 
 signal announce(text: String)
+signal notice(text: String) ## small, short-lived HUD message (shop feedback, lever refunds)
 
 # --- replicated (host -> all) ---
 var state: int = State.IDLE:
@@ -15,6 +16,7 @@ var wave := 0:
 var enemies_alive := 0
 var to_spawn := 0
 var break_left := 0.0
+var cash := 0 ## one shared pot for the whole team (replicated)
 
 var total_waves: int = GameConfig.WAVES.size()
 var hold := false ## tests: freeze the break timer and spawning so a bot can stage its own scenario
@@ -26,6 +28,10 @@ var _kind_plan: Array = [] ## kinds still to spawn this wave (specials are shuff
 @onready var enemy_spawner: MultiplayerSpawner = $"../EnemySpawner"
 @onready var enemies: Node3D = $"../Enemies"
 @onready var level: SaloonLevel = $"../Level"
+
+
+func _ready() -> void:
+	add_to_group("wave_manager")
 
 
 func _set_state(v: int) -> void:
@@ -58,6 +64,9 @@ func start_run() -> void:
 		e.queue_free()
 	level.reset_run()
 	Fx.srv_clear_snacks()
+	cash = 0
+	for p in Net.all_players():
+		p.weapons.reset_weapons.rpc() # a new run starts with just the pistol
 	for p in Net.all_players():
 		p.hugged = 0
 	wave = 0
@@ -157,9 +166,13 @@ func _check_game_over() -> void:
 
 
 func _spawn_one(cfg: Dictionary) -> void:
-	var entrance := randi() % level.barricades.size()
-	if entrance == _last_entrance and randf() < 0.5:
-		entrance = (entrance + 1) % level.barricades.size()
+	var active: Array[int] = [] # the annex windows only count once the annex is open
+	for i in level.barricades.size():
+		if level.barricades[i].is_active():
+			active.append(i)
+	var entrance: int = active.pick_random()
+	if entrance == _last_entrance and active.size() > 1 and randf() < 0.5:
+		entrance = active[(active.find(entrance) + 1) % active.size()]
 	_last_entrance = entrance
 	var bar := level.barricades[entrance]
 	var base := level.enemy_spawn_point(entrance)
@@ -205,3 +218,22 @@ func spawn_at(pos: Vector3, entrance: int, hp: int, speed: float, zombie_kind: i
 ## Specials scale with the team like everything else, but never round away to nothing.
 func _scaled_special(n: int, scale: float) -> int:
 	return 0 if n <= 0 else maxi(int(round(n * scale)), 1)
+
+
+# --- shared cash ------------------------------------------------------------------------------------
+
+func srv_add_cash(n: int) -> void:
+	cash += n
+
+
+@rpc("authority", "call_local", "reliable")
+func cl_notice(text: String) -> void:
+	notice.emit(text)
+
+
+## Returns false (and spends nothing) if the team cannot afford it.
+func srv_spend(n: int) -> bool:
+	if cash < n:
+		return false
+	cash -= n
+	return true

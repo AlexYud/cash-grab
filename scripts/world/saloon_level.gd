@@ -46,3 +46,8 @@ func reset_run() -> void:
 		b.srv_reset()
 	for b in barrels:
 		b.srv_reset()
+	var annex := get_node_or_null("Annex") as Annex
+	if annex != null:
+		annex.srv_reset()
+	for i in get_tree().get_nodes_in_group("interactables"):
+		(i as Interactable).srv_reset()

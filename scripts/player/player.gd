@@ -8,7 +8,7 @@ extends CharacterBody3D
 ## Clients ask the host to do things through srv_* RPCs; the host answers with cl_* RPCs / replicated state.
 
 enum Status { ALIVE, DOWNED, ELIMINATED }
-enum Interact { NONE, REPAIR, REVIVE }
+enum Interact { NONE, REPAIR, REVIVE, GENERIC } ## GENERIC: an Interactable (levers, shops), target = its index
 
 const FLAG_SPRINT := 1
 const FLAG_AIR := 2
@@ -54,11 +54,16 @@ var bot_controlled := false
 var yaw := 0.0
 var pitch := 0.0
 var stagger_time := 0.0
+var ads := false ## aiming down sights right now (read by the weapon code and camera)
+var _stumble_cd := 0.0
 var shove_cd := 0.0
 var recoil := 0.0 ## radians of camera kick, decays
 var cam_roll := 0.0
 var shake := 0.0
 var damage_flash := 0.0
+var _gen_hold := 0.0 ## local progress of holding E on an Interactable (the host times it separately)
+var _gen_done := false
+var _gen_target := 0
 var prompt_text := ""
 var prompt_progress := -1.0
 var spectate_index := 0
@@ -189,8 +194,9 @@ func _gather_input() -> void:
 	i.shove = Input.is_action_just_pressed("shove")
 	i.interact_held = Input.is_action_pressed("interact")
 	i.grab_held = Input.is_action_pressed("grab")
+	i.ads = Input.is_action_pressed("ads")
 	i.weapon_slot = -1
-	for w in 4:
+	for w in 6:
 		if Input.is_action_just_pressed("weapon_%d" % (w + 1)):
 			i.weapon_slot = w
 	i.weapon_cycle = 1 if Input.is_action_just_pressed("weapon_next") else (-1 if Input.is_action_just_pressed("weapon_prev") else 0)
@@ -254,9 +260,10 @@ func _tick_alive(delta: float) -> void:
 	_update_grab_input()
 
 	var wish := Basis(Vector3.UP, yaw) * Vector3(input.move.x, 0.0, input.move.y)
-	var sprinting := input.sprint and input.move.y < -0.1 and not input.fire_held and grabbing == 0 and hugged == 0 and not weapons.is_reloading()
+	ads = input.ads and not carrying and not weapons.locked
+	var sprinting := input.sprint and input.move.y < -0.1 and not input.fire_held and grabbing == 0 and hugged == 0 and not ads and not weapons.is_reloading()
 	var speed := GameConfig.SPRINT_SPEED if sprinting else GameConfig.WALK_SPEED
-	speed *= _speed_multiplier()
+	speed *= _speed_multiplier() * (GameConfig.ADS_SPEED_MULT if ads else 1.0)
 	var target := Vector2(wish.x, wish.z) * speed
 	var staggered := stagger_time > 0.0
 	var accel := GameConfig.GROUND_ACCEL if on_floor else GameConfig.AIR_ACCEL
@@ -287,6 +294,7 @@ func is_carrying() -> bool:
 
 
 func _tick_downed(delta: float) -> void:
+	ads = false
 	weapons.locked = false
 	weapons.tick(delta, input)
 	if grabbed_by != 0:
@@ -381,7 +389,7 @@ func _update_local_camera(delta: float) -> void:
 	var jitter := Vector3(randf_range(-1, 1), randf_range(-1, 1), 0) * shake * 0.04
 	head.global_position = pos + Vector3(0, _eye + bob_y, 0) + jitter
 	head.global_basis = Basis.from_euler(Vector3(pitch + recoil, yaw, cam_roll))
-	var fov := 78.0 + (4.0 if sync_flags & FLAG_SPRINT else 0.0)
+	var fov := GameConfig.ADS_FOV if ads else 78.0 + (4.0 if sync_flags & FLAG_SPRINT else 0.0)
 	camera.fov = lerpf(camera.fov, fov, 1.0 - exp(-6.0 * delta))
 
 
@@ -454,6 +462,8 @@ func _update_nametag(delta: float) -> void:
 
 
 func _update_grab_line() -> void:
+	grab_line.visible = false # no rope: the pull is enough, and carrying has its own look
+	return
 	var target := Net.get_player(grabbing) if grabbing != 0 else null
 	if target == null or not is_instance_valid(target):
 		grab_line.visible = false
@@ -598,6 +608,34 @@ func _update_interactions() -> void:
 					prompt_text = "Hold [E] to repair barricade (%d/%d)" % [bar.boards, Barricade.MAX_BOARDS]
 					prompt_progress = bar.repair_progress
 					break
+		if kind == Interact.NONE:
+			var best: Interactable = null
+			var best_d := INF
+			for n in get_tree().get_nodes_in_group("interactables"):
+				var it := n as Interactable
+				if it != null and it.in_reach(self) and it.prompt(self) != "":
+					var d := it.global_position.distance_to(global_position)
+					if d < best_d:
+						best_d = d
+						best = it
+			if best != null:
+				prompt_text = best.prompt(self)
+				if best.can_hold(self):
+					kind = Interact.GENERIC
+					target = best.index
+					if target != _gen_target:
+						_gen_target = target
+						_gen_hold = 0.0
+						_gen_done = false
+					if input.interact_held and not _gen_done:
+						_gen_hold += get_physics_process_delta_time()
+						if _gen_hold >= best.hold_time(self):
+							_gen_done = true # the host acts now; do not start over until E is released
+					prompt_progress = clampf(_gen_hold / best.hold_time(self), 0.0, 1.0) if not _gen_done else -1.0
+	if not input.interact_held or kind != Interact.GENERIC:
+		_gen_hold = 0.0
+		_gen_done = false
+		_gen_target = 0
 	if kind == Interact.NONE and status == Status.ALIVE:
 		if hugged > 0:
 			prompt_text = "A Hugger has you! Shove it off [F] or shoot it"
@@ -687,6 +725,27 @@ func _srv_throw(dir: Vector3) -> void:
 	fx_shove.rpc()
 
 
+## Host: running into a zombie that is lying on the floor trips you (jumping over it is safe).
+func _srv_stumble(delta: float) -> void:
+	_stumble_cd = maxf(_stumble_cd - delta, 0.0)
+	if _stumble_cd > 0.0 or status != Status.ALIVE or (sync_flags & FLAG_AIR) != 0 or (sync_flags & FLAG_STAGGER) != 0:
+		return
+	var v := Vector3(sync_vel.x, 0.0, sync_vel.z)
+	if v.length() < GameConfig.STUMBLE_MIN_SPEED:
+		return
+	for n in get_tree().get_nodes_in_group("enemies"):
+		var z := n as Zombie
+		if z == null or z.is_dead() or not z.is_fallen():
+			continue
+		var off := z.global_position - global_position
+		off.y = 0.0
+		if off.length() < GameConfig.STUMBLE_RANGE and off.normalized().dot(v.normalized()) > 0.2: # heading into it
+			_stumble_cd = GameConfig.STUMBLE_COOLDOWN
+			srv_launch(v.normalized() * 3.5 + Vector3.UP * 2.5, GameConfig.STUMBLE_STAGGER)
+			Sfx.play_at(&"hit_world", global_position, -2.0, 0.6)
+			return
+
+
 ## Host: a player flying through the air at speed is a bowling ball (thrown, shoved, blown up...).
 func _srv_bowling() -> void:
 	if (sync_flags & FLAG_STAGGER) == 0:
@@ -753,6 +812,7 @@ func _srv_tick(delta: float) -> void:
 	if status == Status.DOWNED:
 		_srv_tick_downed(delta)
 	_srv_bowling()
+	_srv_stumble(delta)
 	if grabbing != 0:
 		var t := Net.get_player(grabbing)
 		var broken := t == null or status != Status.ALIVE or t.status == Status.ELIMINATED
@@ -873,6 +933,26 @@ func srv_launch(vel: Vector3, stagger: float, _hard: bool = false) -> void: # _h
 func cl_launch(vel: Vector3, stagger: float) -> void:
 	if multiplayer.get_remote_sender_id() == 1:
 		_apply_launch(vel, stagger)
+
+
+## Host: a short message on this player's HUD only.
+func notify(text: String) -> void:
+	if peer_id == 1:
+		_show_notice(text)
+	else:
+		cl_notice.rpc_id(peer_id, text)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func cl_notice(text: String) -> void:
+	if multiplayer.get_remote_sender_id() == 1:
+		_show_notice(text)
+
+
+func _show_notice(text: String) -> void:
+	var wm := get_tree().get_first_node_in_group("wave_manager") as WaveManager
+	if wm != null:
+		wm.notice.emit(text)
 
 
 @rpc("any_peer", "call_remote", "reliable")

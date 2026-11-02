@@ -34,28 +34,28 @@ properties/0/path = NodePath(".:alive")
 properties/0/spawn = true
 properties/0/replication_mode = 1
 
-[node name="Barrel" type="StaticBody3D" unique_id=483080202]
+[node name="Barrel" type="StaticBody3D" unique_id=1699320446]
 script = ExtResource("1_djy2t")
 
-[node name="Shape" type="CollisionShape3D" parent="." unique_id=1216177959]
+[node name="Shape" type="CollisionShape3D" parent="." unique_id=360983413]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
 shape = SubResource("CylinderShape3D_bjvts")
 
-[node name="Mesh" type="MeshInstance3D" parent="." unique_id=613308986]
+[node name="Mesh" type="MeshInstance3D" parent="." unique_id=63126923]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
 material_override = SubResource("StandardMaterial3D_as2xt")
 mesh = SubResource("CylinderMesh_ktbbj")
 
-[node name="Band2" type="MeshInstance3D" parent="." unique_id=703834109]
+[node name="Band2" type="MeshInstance3D" parent="." unique_id=192968217]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.2, 0)
 material_override = SubResource("StandardMaterial3D_qw82t")
 mesh = SubResource("CylinderMesh_o73or")
 
-[node name="Band8" type="MeshInstance3D" parent="." unique_id=804041174]
+[node name="Band8" type="MeshInstance3D" parent="." unique_id=741096183]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8, 0)
 material_override = SubResource("StandardMaterial3D_qw82t")
 mesh = SubResource("CylinderMesh_2re4v")
 
-[node name="Sync" type="MultiplayerSynchronizer" parent="." unique_id=10433673]
+[node name="Sync" type="MultiplayerSynchronizer" parent="." unique_id=285550791]
 replication_interval = 0.2
 replication_config = SubResource("SceneReplicationConfig_6tk10")

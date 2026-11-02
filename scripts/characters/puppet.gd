@@ -91,6 +91,8 @@ func build(p_kind: int, shirt: Color, skin_override: Color = Color(0, 0, 0, 0)) 
 		_guns.append(_make_gun(_arm_r, Vector3(0.06, 0.78, 0.08), -0.78, Color(0.35, 0.22, 0.12)))
 		_guns.append(_make_gun(_arm_r, Vector3(0.1, 0.55, 0.1), -0.7, Color(0.1, 0.5, 0.55)))
 		_guns.append(_make_gun(_arm_r, Vector3(0.12, 0.4, 0.12), -0.64, Color(0.55, 0.2, 0.75)))
+		_guns.append(_make_gun(_arm_r, Vector3(0.12, 0.5, 0.12), -0.68, Color(0.75, 0.45, 0.2)))
+		_guns.append(_make_gun(_arm_r, Vector3(0.14, 0.45, 0.14), -0.66, Color(0.95, 0.45, 0.7)))
 		set_weapon(0)
 
 

@@ -7,6 +7,7 @@ var sprint := false
 var fire_held := false
 var interact_held := false
 var grab_held := false
+var ads := false ## aiming down sights (hold right mouse)
 # edge-triggered: true for exactly one physics tick
 var jump := false
 var fire_pressed := false
@@ -34,4 +35,5 @@ func clear_all() -> void:
 	fire_held = false
 	interact_held = false
 	grab_held = false
+	ads = false
 	clear_edges()

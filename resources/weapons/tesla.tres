@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="WeaponData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/weapons/weapon_data.gd" id="1_wd"]
+
+[resource]
+script = ExtResource("1_wd")
+id = &"tesla"
+display_name = "Tesla Gun"
+damage = 22.0
+pellets = 1
+spread_deg = 0.6
+fire_interval = 0.4
+mag_size = 18
+reload_time = 2.0
+max_range = 30.0
+falloff_start = 30.0
+falloff_end = 31.0
+min_damage_frac = 1.0
+enemy_knockback = 0.0
+enemy_stagger = 0.25
+player_knockback = 0.0
+player_stagger = 0.0
+recoil_deg = 1.0
+switch_time = 0.4
+special = &"tesla"

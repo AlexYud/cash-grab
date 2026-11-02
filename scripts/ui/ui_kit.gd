@@ -92,3 +92,9 @@ static func load_settings() -> ConfigFile:
 	var cfg := ConfigFile.new()
 	cfg.load(SETTINGS_PATH)
 	return cfg
+
+
+static func save_setting(section: String, key: String, value: Variant) -> void:
+	var cfg := load_settings()
+	cfg.set_value(section, key, value)
+	cfg.save(SETTINGS_PATH)

@@ -21,38 +21,41 @@ properties/3/replication_mode = 1
 properties/4/path = NodePath(".:break_left")
 properties/4/spawn = true
 properties/4/replication_mode = 1
+properties/5/path = NodePath(".:cash")
+properties/5/spawn = true
+properties/5/replication_mode = 1
 
-[node name="Main" type="Node" unique_id=122541145]
+[node name="Main" type="Node" unique_id=867463342]
 script = ExtResource("1_jyhfs")
 
-[node name="World" type="Node3D" parent="." unique_id=1129657885]
+[node name="World" type="Node3D" parent="." unique_id=786259318]
 
-[node name="Level" type="Node3D" parent="World" unique_id=139923806 instance=ExtResource("2_tbgi4")]
+[node name="Level" type="Node3D" parent="World" unique_id=561892469 instance=ExtResource("2_tbgi4")]
 script = ExtResource("3_tefeu")
 
-[node name="Players" type="Node3D" parent="World" unique_id=190525649]
+[node name="Players" type="Node3D" parent="World" unique_id=736700111]
 
-[node name="Enemies" type="Node3D" parent="World" unique_id=704561697]
+[node name="Enemies" type="Node3D" parent="World" unique_id=646214591]
 
-[node name="Fx" type="Node3D" parent="World" unique_id=2070586422]
+[node name="Fx" type="Node3D" parent="World" unique_id=1318052445]
 
-[node name="PlayerSpawner" type="MultiplayerSpawner" parent="World" unique_id=572035703]
+[node name="PlayerSpawner" type="MultiplayerSpawner" parent="World" unique_id=833679495]
 spawn_path = NodePath("../Players")
 
-[node name="EnemySpawner" type="MultiplayerSpawner" parent="World" unique_id=424304271]
+[node name="EnemySpawner" type="MultiplayerSpawner" parent="World" unique_id=1203390458]
 spawn_path = NodePath("../Enemies")
 
-[node name="WaveManager" type="Node" parent="World" unique_id=1973647417]
+[node name="WaveManager" type="Node" parent="World" unique_id=2091601038]
 script = ExtResource("4_o6xl0")
 
-[node name="Sync" type="MultiplayerSynchronizer" parent="World/WaveManager" unique_id=1967386560]
+[node name="Sync" type="MultiplayerSynchronizer" parent="World/WaveManager" unique_id=1666031032]
 replication_interval = 0.2
 replication_config = SubResource("SceneReplicationConfig_tipki")
 
-[node name="MenuCam" type="Camera3D" parent="." unique_id=233817042]
+[node name="MenuCam" type="Camera3D" parent="." unique_id=359564272]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 9, 30)
 fov = 70.0
 far = 200.0
 
-[node name="UI" type="CanvasLayer" parent="." unique_id=1395945335]
+[node name="UI" type="CanvasLayer" parent="." unique_id=2094645550]
 layer = 10

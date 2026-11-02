@@ -58,6 +58,7 @@ var _leap_vel := Vector3.ZERO
 var _leap_hit := false
 var _leap_cd := 2.0
 var _bowl_cd := 0.0
+var _last_hit_head := false
 var _level: SaloonLevel = null
 
 # --- local ---
@@ -624,6 +625,19 @@ func srv_yank(origin: Vector3) -> void:
 	srv_trip(Vector3.ZERO)
 
 
+## Boing Gun: launched into the air, comes down in a heap.
+func srv_boing() -> void:
+	if _dead:
+		return
+	if _latched != null:
+		_unlatch(0.0)
+	_fall_left = 0.0 # so srv_trip is allowed even if it was already down
+	srv_trip(Vector3.ZERO)
+	velocity.y = 9.0 if kind != Kind.BRUTE else 4.0
+	if kind == Kind.BRUTE:
+		_stagger = 0.8
+
+
 ## A fast-flying player (thrown, shoved, blown up) ploughs into this zombie.
 func srv_bowled(dir: Vector3, source: Player) -> void:
 	if _dead or _bowl_cd > 0.0:
@@ -636,10 +650,11 @@ func srv_bowled(dir: Vector3, source: Player) -> void:
 	srv_hit(GameConfig.BOWLING_DAMAGE, Vector3.ZERO, 0.0, source)
 
 
-func srv_hit(damage: int, knock: Vector3, stagger: float, source: Player) -> void:
+func srv_hit(damage: int, knock: Vector3, stagger: float, source: Player, head: bool = false) -> void:
 	if _dead:
 		return
 	hp -= damage
+	_last_hit_head = head # only a headshot that lands the killing blow pays the bonus
 	var k := 0.25 if kind == Kind.BRUTE else 1.0 # the brute barely notices being pushed
 	add_knock(knock * k)
 	if _knock.length() > 10.0:
@@ -685,6 +700,9 @@ func _die(source: Player) -> void:
 		source.weapons.srv_notify_kill()
 	if kind == Kind.BLOATER:
 		_burst()
+	var wm := get_tree().get_first_node_in_group("wave_manager") as WaveManager
+	if wm != null:
+		wm.srv_add_cash((GameConfig.CASH_KILL if kind == Kind.NORMAL else GameConfig.CASH_KILL_SPECIAL) + (GameConfig.CASH_HEADSHOT_BONUS if _last_hit_head else 0))
 	Fx.srv_try_snack(global_position, kind)
 	Fx.enemy_died.rpc(global_position, rotation.y, _knock * 1.4 + Vector3(0, 3.0, 0), kind)
 	died.emit(self)

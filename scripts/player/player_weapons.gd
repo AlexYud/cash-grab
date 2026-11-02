@@ -14,6 +14,8 @@ var current := 0
 var locked := false ## both hands busy (carrying a teammate): no firing, reloading or switching
 var hit_marker := 0.0 ## HUD: seconds left on the hit marker
 var kill_marker := 0.0
+var head_marker := 0.0 ## HUD: gold marker after a headshot
+var owned: Array[bool] = [] ## weapons this player has (everyone starts with just the pistol)
 
 var _cooldown := 0.0
 var _reload_left := 0.0
@@ -27,13 +29,15 @@ var _muzzles: Array[Marker3D] = []
 var _kick := 0.0
 var _shove_anim := 0.0
 var _vm_bob := 0.0
+var _ads := 0.0
 
 
 func setup(p: Player) -> void:
 	player = p
-	list = [load("res://resources/weapons/pistol.tres"), load("res://resources/weapons/shotgun.tres"), load("res://resources/weapons/yank.tres"), load("res://resources/weapons/disco.tres")]
+	list = [load("res://resources/weapons/pistol.tres"), load("res://resources/weapons/shotgun.tres"), load("res://resources/weapons/yank.tres"), load("res://resources/weapons/disco.tres"), load("res://resources/weapons/tesla.tres"), load("res://resources/weapons/boing.tres")]
 	for w in list:
 		ammo.append(w.mag_size)
+		owned.append(Net.debug_all_weapons or owned.is_empty())
 	_build_viewmodel()
 
 
@@ -69,6 +73,7 @@ func play_shove() -> void:
 func tick(delta: float, inp: PlayerInputState) -> void:
 	hit_marker = maxf(hit_marker - delta, 0.0)
 	kill_marker = maxf(kill_marker - delta, 0.0)
+	head_marker = maxf(head_marker - delta, 0.0)
 	_cooldown = maxf(_cooldown - delta, 0.0)
 	_buffered = maxf(_buffered - delta, 0.0)
 	_switch_left = maxf(_switch_left - delta, 0.0)
@@ -82,10 +87,14 @@ func tick(delta: float, inp: PlayerInputState) -> void:
 		return
 	if player.status == Player.Status.ALIVE:
 		var want := current
-		if inp.weapon_slot >= 0 and inp.weapon_slot < list.size():
+		if inp.weapon_slot >= 0 and inp.weapon_slot < list.size() and owned[inp.weapon_slot]:
 			want = inp.weapon_slot
 		elif inp.weapon_cycle != 0:
-			want = posmod(current + inp.weapon_cycle, list.size())
+			for step in list.size(): # next weapon we actually own
+				var cand := posmod(current + inp.weapon_cycle * (step + 1), list.size())
+				if owned[cand]:
+					want = cand
+					break
 		if want != current:
 			current = want
 			_reload_left = 0.0
@@ -130,8 +139,9 @@ func _fire() -> void:
 	var kinds := PackedByteArray()
 	var agg := {}
 	var enemy_hit := false
+	var any_head := false
 	for i in w.pellets:
-		var dir := _spread_dir(basis, w.spread_deg)
+		var dir := _spread_dir(basis, w.spread_deg * (GameConfig.ADS_SPREAD_MULT if player.ads else 1.0))
 		var q := PhysicsRayQueryParameters3D.create(origin, origin + dir * w.max_range, GameConfig.MASK_HITSCAN, exclude)
 		var r := space.intersect_ray(q)
 		if r.is_empty():
@@ -142,10 +152,14 @@ func _fire() -> void:
 		var col: Object = r["collider"]
 		var kind: int = Hit.WORLD
 		var id := 0
+		var head := false
 		if col is Zombie:
+			var zc := col as Zombie
 			kind = Hit.ENEMY
-			id = (col as Zombie).net_id
+			id = zc.net_id
 			enemy_hit = true
+			# the top of a standing zombie is its head (fallen ones are a flat body: no headshots)
+			head = not zc.is_fallen() and pos.y - zc.global_position.y > GameConfig.HEAD_HEIGHT * zc.puppet.scale.x
 		elif col is Player:
 			kind = Hit.PLAYER
 			id = (col as Player).peer_id
@@ -159,14 +173,19 @@ func _fire() -> void:
 			var key := kind * 100000 + id
 			if agg.has(key):
 				agg[key][2] += 1
+				agg[key][4] += 1 if head else 0
 			else:
-				agg[key] = [kind, id, 1, pos]
+				agg[key] = [kind, id, 1, pos, 1 if head else 0]
+			if head:
+				any_head = true
 	_shot_visuals(current, _muzzle_pos(), ends, true)
 	Sfx.play(w.id, -3.0)
 	fx_shot.rpc(current, ends, kinds)
 	if enemy_hit:
 		hit_marker = 0.18
-		Sfx.play(&"hit_marker", -8.0)
+		Sfx.play(&"hit_marker", -8.0, 1.5 if any_head else 1.0)
+	if any_head:
+		head_marker = 0.25
 	if not agg.is_empty():
 		if multiplayer.is_server():
 			_srv_hits(current, origin, agg.values())
@@ -222,6 +241,8 @@ func srv_hits(weapon_idx: int, origin: Vector3, hits: Array) -> void:
 func _srv_hits(weapon_idx: int, origin: Vector3, hits: Array) -> void:
 	if weapon_idx < 0 or weapon_idx >= list.size() or player.status == Player.Status.ELIMINATED:
 		return
+	if not owned[weapon_idx]:
+		return # not a weapon this player has (host copy is kept in sync by give_weapon)
 	if player.status == Player.Status.DOWNED and weapon_idx != 0:
 		return
 	var w := list[weapon_idx]
@@ -246,11 +267,16 @@ func _srv_hits(weapon_idx: int, origin: Vector3, hits: Array) -> void:
 				var z := Zombie.find_by_id(get_tree(), id)
 				if z == null or z.is_dead() or z.global_position.distance_to(point) > 3.5:
 					continue
-				var dmg := int(round(w.damage_at(dist) * pellets))
-				z.srv_hit(dmg, dir * w.enemy_knockback * pellets, w.enemy_stagger, player)
+				var heads: int = clampi(int(h[4]) if h.size() > 4 else 0, 0, pellets)
+				var dmg := int(round(w.damage_at(dist) * (pellets + heads * (GameConfig.HEADSHOT_MULT - 1.0))))
+				z.srv_hit(dmg, dir * w.enemy_knockback * pellets, w.enemy_stagger, player, heads > 0)
 				if not z.is_dead():
 					if w.special == &"yank":
 						z.srv_yank(origin)
+					elif w.special == &"boing":
+						z.srv_boing()
+					elif w.special == &"tesla":
+						_srv_tesla(z, w, origin)
 					elif w.special == &"disco":
 						z.srv_dance(3.0)
 			Hit.PLAYER:
@@ -261,6 +287,12 @@ func _srv_hits(weapon_idx: int, origin: Vector3, hits: Array) -> void:
 					var to := player.global_position - p.global_position
 					to.y = 0.0
 					p.srv_launch(to.normalized() * minf(to.length() * 2.2 + 3.0, 13.0) + Vector3.UP * 3.0, 0.6)
+					continue
+				if w.special == &"boing": # a big bounce
+					p.srv_launch(Vector3.UP * 11.0 + Vector3(dir.x, 0.0, dir.z) * 2.0, 0.7)
+					continue
+				if w.special == &"tesla": # a tingle
+					p.srv_launch(Vector3.UP * 3.0, 0.4)
 					continue
 				if w.special == &"disco": # a little hop
 					p.srv_launch(Vector3.UP * 6.0, 0.4)
@@ -274,6 +306,60 @@ func _srv_hits(weapon_idx: int, origin: Vector3, hits: Array) -> void:
 				var b := ExplosiveBarrel.find_by_index(get_tree(), id)
 				if b != null and b.alive:
 					b.srv_damage(int(round(w.damage_at(dist) * pellets)), player)
+
+
+## Tesla Gun: the bolt arcs from the zombie it hit to up to three more nearby, weaker each jump.
+func _srv_tesla(first: Zombie, w: WeaponData, origin: Vector3) -> void:
+	var chain := PackedVector3Array([origin, first.global_position + Vector3(0, 1.1, 0)])
+	var visited: Array = [first]
+	var cur := first
+	for jump in GameConfig.TESLA_FALLOFF.size():
+		var best: Zombie = null
+		var best_d := GameConfig.TESLA_RANGE
+		for n in get_tree().get_nodes_in_group("enemies"):
+			var o := n as Zombie
+			if o == null or o.is_dead() or visited.has(o):
+				continue
+			var d := o.global_position.distance_to(cur.global_position)
+			if d < best_d:
+				best_d = d
+				best = o
+		if best == null:
+			break
+		visited.append(best)
+		chain.append(best.global_position + Vector3(0, 1.1, 0))
+		best.srv_hit(int(round(w.damage * GameConfig.TESLA_FALLOFF[jump])), Vector3.ZERO, 0.35, player)
+		cur = best
+	Fx.lightning.rpc(chain)
+
+
+## Called on every peer when the mystery box (or a debug flag) hands this player a weapon.
+@rpc("any_peer", "call_local", "reliable")
+func give_weapon(idx: int) -> void:
+	var s := multiplayer.get_remote_sender_id()
+	if (s != 0 and s != 1) or idx < 0 or idx >= list.size():
+		return
+	owned[idx] = true
+	ammo[idx] = list[idx].mag_size # a weapon you already had just gets refilled
+	if player.is_local():
+		current = idx
+		_reload_left = 0.0
+		_switch_left = list[idx].switch_time
+		_refresh_viewmodel()
+		Sfx.play(&"revive", -3.0, 1.3)
+
+
+## New run: back to just the pistol.
+@rpc("any_peer", "call_local", "reliable")
+func reset_weapons() -> void:
+	var s := multiplayer.get_remote_sender_id()
+	if s != 0 and s != 1:
+		return
+	for i in owned.size():
+		owned[i] = i == 0 or Net.debug_all_weapons
+		ammo[i] = list[i].mag_size
+	current = 0
+	_refresh_viewmodel()
 
 
 @rpc("any_peer", "call_remote", "reliable")
@@ -340,6 +426,29 @@ func _build_viewmodel() -> void:
 	_box(disco, Vector3(0.08, 0.08, 0.09), Vector3(0, -0.06, -0.08), skin)
 	_muzzles.append(_marker(disco, Vector3(0, 0.0, -0.37)))
 	_guns.append(disco)
+
+	var tesla := Node3D.new() # copper coil on a handle, glowing tip
+	tesla.name = "TeslaGun"
+	_viewmodel.add_child(tesla)
+	_box(tesla, Vector3(0.09, 0.09, 0.32), Vector3(0, 0.0, -0.16), Color(0.75, 0.45, 0.2))
+	_box(tesla, Vector3(0.14, 0.14, 0.05), Vector3(0, 0.0, -0.3), Color(0.7, 0.4, 0.15))
+	_box(tesla, Vector3(0.14, 0.14, 0.05), Vector3(0, 0.0, -0.22), Color(0.7, 0.4, 0.15))
+	_box(tesla, Vector3(0.06, 0.06, 0.08), Vector3(0, 0.0, -0.4), Color(0.5, 0.85, 1.0))
+	_box(tesla, Vector3(0.05, 0.1, 0.07), Vector3(0, -0.09, -0.06), dark)
+	_box(tesla, Vector3(0.08, 0.08, 0.09), Vector3(0, -0.06, -0.08), skin)
+	_muzzles.append(_marker(tesla, Vector3(0, 0.0, -0.45)))
+	_guns.append(tesla)
+
+	var boing := Node3D.new() # a stubby pink cannon with a spring on the front
+	boing.name = "BoingGun"
+	_viewmodel.add_child(boing)
+	_box(boing, Vector3(0.14, 0.14, 0.28), Vector3(0, 0.0, -0.14), Color(0.95, 0.45, 0.7))
+	_box(boing, Vector3(0.07, 0.07, 0.16), Vector3(0, 0.0, -0.35), Color(0.8, 0.8, 0.85))
+	_box(boing, Vector3(0.12, 0.12, 0.04), Vector3(0, 0.0, -0.45), Color(0.95, 0.85, 0.2))
+	_box(boing, Vector3(0.05, 0.1, 0.07), Vector3(0, -0.1, -0.05), dark)
+	_box(boing, Vector3(0.08, 0.08, 0.09), Vector3(0, -0.07, -0.07), skin)
+	_muzzles.append(_marker(boing, Vector3(0, 0.0, -0.48)))
+	_guns.append(boing)
 	_refresh_viewmodel()
 
 
@@ -385,5 +494,6 @@ func _process(delta: float) -> void:
 	var shove := sin(_shove_anim / 0.25 * PI)
 	var down := 0.3 if player.status == Player.Status.DOWNED else 0.0
 	var bob := Vector3(cos(_vm_bob * 0.5) * 0.008, sin(_vm_bob) * 0.008, 0.0) * clampf(hspeed / 5.0, 0.0, 1.0)
-	_viewmodel.position = Vector3(0.2, -0.23 - dip - sw - down * 0.2, -0.36 + _kick * 0.07 - shove * 0.12) + bob
+	_ads = lerpf(_ads, 1.0 if player.ads else 0.0, 1.0 - exp(-14.0 * delta))
+	_viewmodel.position = Vector3(lerpf(0.2, 0.0, _ads), lerpf(-0.23, -0.17, _ads) - dip - sw - down * 0.2, -0.36 + _kick * 0.07 - shove * 0.12) + bob * (1.0 - _ads)
 	_viewmodel.rotation = Vector3(_kick * 0.2 - dip * 1.1 + shove * 0.5, 0.0, -dip * 0.5)

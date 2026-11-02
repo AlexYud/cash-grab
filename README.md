@@ -1,7 +1,8 @@
 # CashGrab - Co-op Wave Survival (prototype 0.1)
 
-Comedy-first, round-based FPS for 1-4 players, built from the GDD (v0.1). One saloon-sized arena, three barricaded
-entrances, four weapons, six zombie types, ten waves. Godot **4.7** + GDScript, Jolt Physics.
+Comedy-first, round-based FPS for 1-4 players, built from the GDD (v0.1). A saloon with five barricaded windows plus a
+lockable east annex (two more windows), six weapons, five zombie types, ten waves, a shared cash pot. Godot **4.7** +
+GDScript, Jolt Physics.
 
 ## Run it
 
@@ -16,9 +17,9 @@ entrances, four weapons, six zombie types, ten waves. Godot **4.7** + GDScript, 
 | Key | Action | Key | Action |
 |---|---|---|---|
 | WASD / Space / Shift | move / jump / sprint | **F** | shove (1.2 s cooldown) |
-| Mouse / LMB | look / fire | **G** (hold) | grab a nearby teammate and pull / drag them |
-| R | reload | **E** (hold) | repair barricade, or revive a downed teammate |
-| 1-4 / wheel | pistol, shotgun, Yank Gun, Disco Blaster | **V** (hold) / **M** | push-to-talk (if enabled) / mute mic |
+| Mouse / LMB / **RMB** (hold) | look / fire / aim down sights (tighter spread, slower, zoomed) | **G** (hold) | grab a nearby teammate and pull / drag them |
+| R | reload | **E** (hold) | repair barricade, revive a teammate, pull levers, use the mystery box and health shops |
+| 1-6 / wheel | pistol, shotgun, Yank Gun, Disco Blaster, Tesla Gun, Boing Gun (only the ones you own) | **V** (hold) / **M** | push-to-talk (if enabled) / mute mic |
 | Esc | pause menu (mic mode, master + voice + per-teammate volume, sensitivity) | | |
 
 ## What is in v0.1 (GDD feature rules)
@@ -26,7 +27,13 @@ entrances, four weapons, six zombie types, ten waves. Godot **4.7** + GDScript, 
 | GDD | Where | Notes |
 |---|---|---|
 | Co-op 1-4, lobby/host/join/disconnect | `autoload/net.gd`, `ui/` | listen-server over ENet; late join; full game turns a 5th player away; leaving cleans up grabs |
-| Gunplay, 4 guns | `player/player_weapons.gd`, `resources/weapons/*.tres` | hitscan, falloff, recoil, reload, hit/kill markers; edit the `.tres` files to balance. **Yank Gun** reels what it hits (zombie or teammate) in to you; **Disco Blaster** makes zombies dance for 3 s instead of attacking |
+| Gunplay, 6 guns | `player/player_weapons.gd`, `resources/weapons/*.tres` | hitscan, falloff, recoil, reload, hit/kill markers; edit the `.tres` files to balance. **You start with only the pistol**; the rest come from the mystery box. **Headshots do 2x damage** (gold hit marker, not an instakill). Holding **RMB** aims down the sights. **Yank Gun** reels what it hits (zombie or teammate) in to you; **Disco Blaster** makes zombies dance for 3 s instead of attacking; **Tesla Gun** arcs lightning from the zombie it hits to the three nearest zombies (60/40/25% of the damage, blue bolts + flash); **Boing Gun** bounces zombies into the air and trips them |
+| Shared cash | `world/wave_manager.gd` (`cash`), `ui/hud.gd` | one pot for the whole party, shown top-left: +$10 per kill ($25 for specials, +$5 for a headshot kill), +$5 per repaired board. Everything below is paid from it |
+| Annex (new area) | `world/annex.gd`, `world/interactable.gd`, `tools/build_scenes.gd` | a bigger room east of the saloon (more cover, 2 more barricaded windows, lamps) behind a gate. Two **levers** in the saloon cost $250 each (hold **E** 1.5 s). The first latches for 20 s: pull the second in time (one player can do both) and a 4 s door animation opens the gate. **Hold E on a latched lever to put it back for a refund**; if the 20 s run out it refunds itself. Annex windows only spawn zombies once it is open |
+| Mystery box / health shops | `world/interactable.gd` | in the annex: **mystery box** ($400) gives a random weapon you do not own yet; **medkit** ($250, full heal). In the saloon: **bandages** ($75, +25 HP). Shops have a 30 s cooldown per player. They are the only healing besides snacks |
+| Invisible walls | `world/barricade.gd`, `scenes/world/barricade.tscn` (`PlayerWall`) | every window has a wall only players collide with, so nobody can leave the building even when all boards are gone (zombies still climb in) |
+| Stumble | `player/player.gd` (`_srv_stumble`) | running or walking into a zombie lying on the floor trips you for about a second; jumping over it is safe |
+| Saved settings | `ui/pause_menu.gd`, `ui/ui_kit.gd` | master volume and mouse sensitivity are saved to `user://settings.cfg` (voice and per-player volumes already were) |
 | Waves | `world/wave_manager.gd`, `game_config.gd` | 10 escalating waves, break between them, scales with player count |
 | Barricades | `world/barricade.gd` | 5 boards, zombies break them, hold **E** to rebuild, blocked while something stands in the gap |
 | Grab friends | `player/player.gd` (`_srv_grab`, `_srv_throw`) | pull a teammate to you. **Grab a downed teammate and you carry them** (your weapons lock): **Fire** throws them. Any player flying fast (thrown, shoved, blown up) is a bowling ball and knocks zombies over |
@@ -61,7 +68,9 @@ and `resources/weapons/*.tres`.
 ## Choices I made where the GDD was silent (easy to change)
 
 - **Keys**: F shove, G grab, E repair/revive, V push-to-talk, M mute. Edit them in Project > Project Settings > Input Map.
-- **Entrances** are three floor-level doorways (south, west, north); there is no window vaulting.
+- **Entrances** are floor-level doorways (no window vaulting): south x2, west x2, north in the saloon, plus north and
+  south in the annex (7 in total, `Barricades/*` indexed 0-6 with matching `EnemySpawns/E0-E6`).
+- **Cash amounts** (`CASH_*`, `LEVER_COST`, `BOX_COST`, `BANDAGE_COST`, `MEDKIT_COST` in `game_config.gd`) are first guesses.
 - **Downed players** are ignored by zombies and bleed out after 45 s; **eliminated** players come back at full health
   when the wave is cleared (`RESTORE_ON_WAVE_CLEAR`), so nobody sits out a whole test.
 - **Ammo**: reserve is unlimited, only reloading limits you.
@@ -81,7 +90,7 @@ needs a window.
 
 ```powershell
 $env:GODOT_BIN = "C:\path\to\Godot_v4.7-stable_win64_console.exe"   # the console exe must sit next to the main exe
-.\tests\run_tests.ps1 -Test all          # or one of: m0 m1 m2 m3a m3b m4a m4b m4c m4d m5 m6 soak2 soak4 hard2 hard4
+.\tests\run_tests.ps1 -Test all          # or one of: m0 m1 m2 m3a m3b m4a m4b m4c m4d m5 m6 m7 nav soak2 soak4 hard2 hard4
 ```
 
 | Test | Covers |
@@ -97,15 +106,16 @@ $env:GODOT_BIN = "C:\path\to\Godot_v4.7-stable_win64_console.exe"   # the consol
 | m4d | host sends everyone back to the lobby and starts a second run from a clean world |
 | m5 | clumsy zombies trip and lie down, brute charge, snack drop + healing, hugger latch + shove-off, friendly fire without the death ragdoll |
 | m6 | carry and throw a downed teammate (bowling), Yank Gun, Disco Blaster, Leaper pounce, Bloater burst |
-| soak2 / soak4 | a whole whole ten-wave run with 2 / 4 scripted players at 3x speed in god mode (so unskilled bots always finish) |
+| m7 | (pistol-only start) shared cash from kills / headshot kills / specials / board repair, headshot = 2x damage, invisible walls at open windows, bandage stand + per-player cooldown, annex: price check, pull, cancel + refund, timeout refund, single-player two-lever flow, closed gate blocks, door animation, annex windows activate, mystery box, medkit, Tesla chain + lightning, Boing launch, stumble over a fallen zombie, ADS |
+| nav | every window has a navmesh route from outside to the players, and the shop / lever spots are reachable |
+| soak2 / soak4 | a whole ten-wave run with 2 / 4 scripted players at 3x speed in god mode (so unskilled bots always finish); the host opens the annex from wave 3 so its windows are exercised too |
 | hard2 / hard4 | the same bots without god mode, as a difficulty probe; not part of `all` and allowed to fail |
 
-Other bots: `nav_check` (every entrance has a navmesh path to the players:
-`godot --headless --path . -- --solo --bot=nav_check --quit-after=15`), and `shots` / `shots2_host` + `shots2_client`
-(screenshots; these need real windows, not `--headless`).
+Other bots: `shots` / `shots2_host` + `shots2_client` (screenshots; these need real windows, not `--headless`).
+Every test except the weapon-shop rules (`m7`, `Plain = $true`) runs with `--all-weapons`, so bots start with all six guns.
 
 Useful command-line flags (after `--`), see `scripts/debug/dev_harness.gd`: `--solo`, `--host[=PORT]`,
-`--join=IP[:PORT]`, `--autostart=N`, `--bot=NAME`, `--hold-waves`, `--god`, `--time-scale=N`, `--shot=PATH`.
+`--join=IP[:PORT]`, `--autostart=N`, `--bot=NAME`, `--hold-waves`, `--god`, `--all-weapons`, `--time-scale=N`, `--shot=PATH`.
 `tools/setup_project.gd` and `tools/build_scenes.tscn` regenerate the project settings / all `.tscn` files
 (re-running the latter overwrites manual scene edits).
 
@@ -128,5 +138,6 @@ max channels: 0"): the engine sending a sync packet to a peer that is already di
 
 Characters are procedural boxes (`characters/puppet.gd`), sounds are synthesized at boot (`autoload/sfx.gd`), the
 level is a blockout. Entrances are floor-level doorways (no window vaulting). The map can be replaced as long as
-`saloon_level.gd`'s node names are kept (`Nav`, `Barricades`, `Barrels`, `PlayerSpawns`, `EnemySpawns`); the navmesh
-is baked at runtime from the level's static colliders, so edits are picked up automatically.
+`saloon_level.gd`'s node names are kept (`Nav`, `Barricades`, `Barrels`, `PlayerSpawns`, `EnemySpawns`, plus `Annex` and
+`Interactables` for the gate, levers and shops); the navmesh is baked at runtime from the level's static colliders
+(the gate sits outside `Nav` on purpose), so edits are picked up automatically.
