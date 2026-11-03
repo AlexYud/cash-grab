@@ -30,7 +30,7 @@ func run() -> void:
 		report("T: the lying zombie has the low hit shape on this peer too", not z.fallen_shape.disabled and z.body_shape.disabled)
 	var up := await wait_until(func() -> bool:
 		var q := Zombie.find_by_id(get_tree(), zid)
-		return q != null and q.state != Zombie.State.FALLEN, 8.0)
+		return q == null or q.state != Zombie.State.FALLEN, 8.0) # (or the host already cleaned it up)
 	report("T: it gets back up (replicated)", up)
 
 	# --- B ---

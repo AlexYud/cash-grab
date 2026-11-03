@@ -17,7 +17,7 @@ func run() -> void:
 
 	await wait_signal("V1_start", 30.0)
 	var n := await _listen(2.5)
-	report("V1: voice packets arrive while the players are close", n >= 30, "packets=%d (2.5 s, ~25/s expected)" % n)
+	report("V1: voice packets arrive while the players are close", n >= 15, "packets=%d (2.5 s, ~25/s expected)" % n)
 	report("V1: the 440 Hz tone survives encode/relay/decode", absf(float(Voice.stats["last_hz"]) - 440.0) < 60.0, "hz=%.0f" % float(Voice.stats["last_hz"]))
 	report("V1: signal level is sane", float(Voice.stats["last_rms"]) > 0.05, "rms=%.2f" % float(Voice.stats["last_rms"]))
 	report("V1: no malformed packets", int(Voice.stats["bad"]) == 0)

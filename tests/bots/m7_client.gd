@@ -36,8 +36,8 @@ func run() -> void:
 	report("L: the client sees the gate open (and no longer solid)", open)
 
 	await wait_signal("BOX_DONE", 60.0)
-	var got := await wait_until(func() -> bool: return host_player.weapons.owned.count(true) == 2, 3.0)
-	report("M: the client sees the host's new weapon", got, "owned=%d" % host_player.weapons.owned.count(true))
+	var got := await wait_until(func() -> bool: return host_player.armor > 0 or host_player.boost_left > 0.0 or host_player.second_wind or host_player.hp != 40, 3.0)
+	report("M: the client sees the host's support item", got, "hp=%d armor=%d boost=%.0f" % [host_player.hp, host_player.armor, host_player.boost_left])
 	await wait_signal("TESLA_DONE", 60.0)
 	report("T: the client saw the lightning", Fx.lightning_count > 0, "n=%d" % Fx.lightning_count)
 	await wait_signal("M7_done", 60.0)

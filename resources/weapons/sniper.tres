@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="WeaponData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/weapons/weapon_data.gd" id="1_wd"]
+
+[resource]
+script = ExtResource("1_wd")
+id = &"sniper"
+display_name = "Sniper Rifle"
+damage = 130.0
+pellets = 1
+spread_deg = 0.1
+fire_interval = 1.5
+mag_size = 5
+reload_time = 2.6
+max_range = 150.0
+falloff_start = 90.0
+falloff_end = 140.0
+min_damage_frac = 0.9
+enemy_knockback = 4.5
+enemy_stagger = 0.6
+player_knockback = 3.0
+player_stagger = 0.4
+recoil_deg = 6.5
+switch_time = 0.7
+ads_fov = 20.0

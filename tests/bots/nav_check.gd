@@ -29,7 +29,7 @@ func run() -> void:
 		report("path from just inside window %d to the players" % i, ok, "points=%d" % path.size())
 		report("path from outside reaches window %d through its opening" % i, through)
 	# the annex doorway is not part of the bake either (the gate sits outside Nav), so shop spots are reachable
-	for spot in [Vector3(33.8, 0, -5.0), Vector3(34.2, 0, 5.0), Vector3(10.2, 0, -4.8), Vector3(10.2, 0, 3.8), Vector3(-9.0, 0, 6.4)]:
+	for spot in [Vector3(58.2, 0, -5.0), Vector3(34.2, 0, 6.6), Vector3(34.6, 0, -6.8), Vector3(34.6, 0, 3.4), Vector3(40.0, 0, 0.0), Vector3(10.2, 0, -4.8), Vector3(10.2, 0, 3.8), Vector3(-9.0, 0, 6.4)]:
 		var p := NavigationServer3D.map_get_path(map, target, spot, true)
 		report("path from the spawn to %s" % str(spot), p.size() >= 2 and p[p.size() - 1].distance_to(spot) < 1.0, "points=%d" % p.size())
 	finish()

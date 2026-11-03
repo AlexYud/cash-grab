@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="WeaponData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/weapons/weapon_data.gd" id="1_wd"]
+
+[resource]
+script = ExtResource("1_wd")
+id = &"axe"
+display_name = "Axe"
+damage = 110.0
+pellets = 1
+spread_deg = 0.0
+fire_interval = 1.0
+mag_size = 0
+reload_time = 0.0
+max_range = 3.5
+falloff_start = 15.0
+falloff_end = 45.0
+min_damage_frac = 1.0
+enemy_knockback = 3.0
+enemy_stagger = 0.5
+player_knockback = 0.0
+player_stagger = 0.0
+recoil_deg = 0.0
+switch_time = 0.5
+melee = true
+melee_range = 2.6
+melee_half_arc_deg = 75.0
+melee_targets = 5

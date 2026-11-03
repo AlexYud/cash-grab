@@ -197,3 +197,39 @@ const SHOP_COOLDOWN := 30.0
 # --- Tesla gun ---
 const TESLA_RANGE := 5.5
 const TESLA_FALLOFF: Array[float] = [0.6, 0.4, 0.25] ## damage fraction on each chained zombie
+
+# --- Part 3 (the hall), crawlers, support items, rewards ---
+const LEVER_COST_STAGE2 := 500 ## the second pair of levers costs more
+const CRAWLER_HP := 90
+const CRAWLER_SPEED := 2.9
+const CRAWLER_DAMAGE := 14
+const CEILING_Y := 4.0 ## underside of the roof: where crawlers walk upside down
+const CRAWLER_CLIMB_SPEED := 2.6
+const CRAWLER_DROP_RANGE := 2.2
+const SNACK_CHANCE_CRAWLER := 0.15
+const ARMOR_ABSORB := 0.6 ## share of every hit the vest soaks up
+const ARMOR_MAX := 100
+const ARMOR_ITEM := 50
+const ADRENALINE_TIME := 30.0
+const ADRENALINE_SPEED := 1.35
+const SECOND_WIND_HP := 50
+
+
+## Settings for wave n (1-based). The table covers the first ten; after that every wave is a bit bigger, tougher and
+## faster than the last (with caps so it stays playable), so there is no final round. Crawlers show up from wave 4.
+static func wave_cfg(n: int) -> Dictionary:
+	var cfg: Dictionary
+	if n <= WAVES.size():
+		cfg = WAVES[n - 1].duplicate()
+	else:
+		var extra := n - WAVES.size()
+		cfg = WAVES[WAVES.size() - 1].duplicate()
+		cfg["count"] = int(cfg["count"]) + 5 * extra
+		cfg["max_alive"] = mini(int(cfg["max_alive"]) + extra, 30)
+		cfg["interval"] = maxf(float(cfg["interval"]) - 0.015 * extra, 0.35)
+		cfg["hp"] = int(cfg["hp"]) + 16 * extra
+		cfg["speed"] = minf(float(cfg["speed"]) + 0.04 * extra, 4.1)
+		for k in ["brutes", "huggers", "leapers", "bloaters"]:
+			cfg[k] = int(cfg[k]) + (extra + 1) / 2
+	cfg["crawlers"] = 0 if n < 4 else 1 + (n - 4) / 2
+	return cfg

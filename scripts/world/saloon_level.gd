@@ -7,6 +7,7 @@ var barricades: Array[Barricade] = []
 var barrels: Array[ExplosiveBarrel] = []
 var player_spawns: Array[Marker3D] = []
 var enemy_spawns: Array[Marker3D] = []
+var vents: Array[Marker3D] = [] ## wall vents the crawlers climb out of (meta "stage": which room must be open)
 
 @onready var nav_region: NavigationRegion3D = $Nav
 
@@ -20,6 +21,9 @@ func _ready() -> void:
 		barrels.append(b as ExplosiveBarrel)
 	for m in $PlayerSpawns.get_children():
 		player_spawns.append(m as Marker3D)
+	if has_node("Vents"):
+		for m in $Vents.get_children():
+			vents.append(m as Marker3D)
 	for m in $EnemySpawns.get_children():
 		enemy_spawns.append(m as Marker3D)
 
@@ -46,8 +50,7 @@ func reset_run() -> void:
 		b.srv_reset()
 	for b in barrels:
 		b.srv_reset()
-	var annex := get_node_or_null("Annex") as Annex
-	if annex != null:
-		annex.srv_reset()
+	for a in get_tree().get_nodes_in_group("annex"):
+		(a as Annex).srv_reset()
 	for i in get_tree().get_nodes_in_group("interactables"):
 		(i as Interactable).srv_reset()

@@ -1,8 +1,10 @@
 extends BotScenario
 ## Whole-run soak bot, used by every player in the soak tests. Plays like a (slightly lazy) human team-mate:
-## shoots the nearest zombie, revives downed friends, repairs boards between fights. The host reports the outcome.
+## shoots the nearest zombie, revives downed friends, repairs boards between fights, picks a reward card and presses
+## ready between waves. Rounds are endless, so the host ends the run once SOAK_WAVES waves are cleared.
 
 const REPORT_EVERY := 3.0
+const SOAK_WAVES := 8
 
 const STALL_LIMIT := 150.0 # game seconds without a spawn or a kill
 
@@ -11,6 +13,9 @@ var _progress_t := 0.0
 var _tick := 0
 var _next_report := REPORT_EVERY
 var _t := 0.0
+var _break_t := 0.0
+var _picked := false
+var _long_gun := 0 ## the ranged weapon this wave (pistol, assault rifle or sniper: whatever the cards gave us)
 
 
 func run() -> void:
@@ -18,10 +23,10 @@ func run() -> void:
 	if is_host:
 		var wm := wave_manager()
 		wm.hold = false
-		wm.break_left = 2.0
 	while not h.signals_seen.has("SOAK_DONE") and is_instance_valid(player):
 		_tick += 1
 		_t += get_physics_process_delta_time()
+		_between_waves()
 		_act()
 		if is_host:
 			_host_watch()
@@ -36,6 +41,22 @@ func run() -> void:
 	finish()
 
 
+## The real UI path without the clicks: take a card, then press ready, like a player would.
+func _between_waves() -> void:
+	var wm := wave_manager()
+	if wm.state != WaveManager.State.BREAK:
+		_break_t = 0.0
+		_picked = false
+		return
+	_break_t += get_physics_process_delta_time()
+	if not _picked and not wm.my_offers.is_empty() and _break_t > 1.0:
+		_picked = true
+		wm.request_pick(randi() % wm.my_offers.size())
+		_long_gun = [0, 6, 7].pick_random() # rotate the ranged weapon so the cards' guns (and their buffs) get used
+	if _break_t > 3.0 and not wm.is_ready(player.peer_id):
+		wm.press_ready(true)
+
+
 func _act() -> void:
 	var inp := player.input
 	inp.interact_held = false
@@ -48,7 +69,12 @@ func _act() -> void:
 	if z != null:
 		zd = z.global_position.distance_to(player.global_position)
 	# weapon choice: shotgun up close, pistol at range
-	var want := 1 if zd < 6.0 else 0
+	var owned := player.weapons.owned
+	var want := _long_gun if (owned[_long_gun] and zd >= 6.0) else 0
+	if zd < 6.0:
+		want = 1 if owned[1] else 0
+	if zd < 2.3 and owned[9]:
+		want = 9 # the katana when they get close
 	if want != player.weapons.current and player.weapons.is_reloading() == false:
 		inp.weapon_slot = want
 	# revive duty
@@ -85,11 +111,13 @@ func _act() -> void:
 
 func _host_watch() -> void:
 	var wm := wave_manager()
-	var annex := get_tree().get_first_node_in_group("annex") as Annex
-	if annex != null and wm.wave >= 3 and not annex.lever1 and not annex.is_open:
-		wm.srv_add_cash(2 * GameConfig.LEVER_COST) # the run opens the annex from wave 3 on, so the soak covers its windows too
-		annex.srv_pull(0)
-		annex.srv_pull(1)
+	# the run opens the annex from wave 3 and the hall from wave 5, so their windows (and the crawler vents) get used
+	for stage in [1, 2]:
+		var annex := Annex.find_stage(get_tree(), stage)
+		if annex != null and wm.wave >= (3 if stage == 1 else 5) and not annex.lever1 and not annex.is_open:
+			wm.srv_add_cash(2 * annex.lever_cost())
+			annex.srv_pull(0)
+			annex.srv_pull(1)
 	if _t >= _next_report:
 		_next_report += REPORT_EVERY
 		var states := []
@@ -132,8 +160,8 @@ func _host_watch() -> void:
 	elif wm.state == WaveManager.State.ACTIVE and _t - _progress_t > STALL_LIMIT: # nobody died and nothing spawned for ages: a stuck zombie
 		report("soak: waves keep moving", false, "stalled on wave %d with %d zombies alive since t=%ds" % [wm.wave, wm.enemies_alive, _progress_t])
 		signal_peers("SOAK_DONE")
-	if wm.state == WaveManager.State.VICTORY:
-		report("soak: survived all %d waves" % wm.total_waves, true, "t=%ds" % _t)
+	if wm.wave >= SOAK_WAVES and wm.state == WaveManager.State.BREAK:
+		report("soak: survived %d waves" % (wm.wave), true, "t=%ds" % _t)
 		signal_peers("SOAK_DONE")
 	elif wm.state == WaveManager.State.GAME_OVER:
 		report("soak: survived all waves", false, "game over on wave %d at t=%ds" % [wm.wave, _t])

@@ -41,6 +41,9 @@ var grabbed_by := 0 ## peer id of whoever is holding me (0 = nobody)
 var grabbing := 0 ## peer id I am holding
 var kills := 0
 var hugged := 0 ## how many Huggers are clinging to me (slows me down)
+var armor := 0 ## soaks up part of every hit until it is used up
+var boost_left := 0.0 ## adrenaline: seconds of extra speed left
+var second_wind := false ## a one-time self-revive instead of going down
 
 # --- host-only bookkeeping ---
 var interact_kind: int = Interact.NONE
@@ -196,9 +199,13 @@ func _gather_input() -> void:
 	i.grab_held = Input.is_action_pressed("grab")
 	i.ads = Input.is_action_pressed("ads")
 	i.weapon_slot = -1
-	for w in 6:
-		if Input.is_action_just_pressed("weapon_%d" % (w + 1)):
-			i.weapon_slot = w
+	var nth := 0 # key N picks the N-th weapon you own, in the order of the list
+	for idx in weapons.list.size():
+		if not weapons.owned[idx]:
+			continue
+		nth += 1
+		if nth <= 9 and Input.is_action_just_pressed("weapon_%d" % nth):
+			i.weapon_slot = idx
 	i.weapon_cycle = 1 if Input.is_action_just_pressed("weapon_next") else (-1 if Input.is_action_just_pressed("weapon_prev") else 0)
 
 
@@ -240,6 +247,8 @@ func _local_tick(delta: float) -> void:
 
 func _speed_multiplier() -> float:
 	var m := GameConfig.HUGGER_SLOW if hugged > 0 else 1.0
+	if boost_left > 0.0:
+		m *= GameConfig.ADRENALINE_SPEED
 	if grabbing != 0:
 		var t := Net.get_player(grabbing)
 		if t != null and t.status == Status.DOWNED:
@@ -260,7 +269,7 @@ func _tick_alive(delta: float) -> void:
 	_update_grab_input()
 
 	var wish := Basis(Vector3.UP, yaw) * Vector3(input.move.x, 0.0, input.move.y)
-	ads = input.ads and not carrying and not weapons.locked
+	ads = input.ads and not carrying and not weapons.locked and not weapons.list[weapons.current].melee
 	var sprinting := input.sprint and input.move.y < -0.1 and not input.fire_held and grabbing == 0 and hugged == 0 and not ads and not weapons.is_reloading()
 	var speed := GameConfig.SPRINT_SPEED if sprinting else GameConfig.WALK_SPEED
 	speed *= _speed_multiplier() * (GameConfig.ADS_SPEED_MULT if ads else 1.0)
@@ -389,7 +398,8 @@ func _update_local_camera(delta: float) -> void:
 	var jitter := Vector3(randf_range(-1, 1), randf_range(-1, 1), 0) * shake * 0.04
 	head.global_position = pos + Vector3(0, _eye + bob_y, 0) + jitter
 	head.global_basis = Basis.from_euler(Vector3(pitch + recoil, yaw, cam_roll))
-	var fov := GameConfig.ADS_FOV if ads else 78.0 + (4.0 if sync_flags & FLAG_SPRINT else 0.0)
+	var ads_fov := weapons.list[weapons.current].ads_fov
+	var fov := (ads_fov if ads_fov > 0.0 else GameConfig.ADS_FOV) if ads else 78.0 + (4.0 if sync_flags & FLAG_SPRINT else 0.0)
 	camera.fov = lerpf(camera.fov, fov, 1.0 - exp(-6.0 * delta))
 
 
@@ -463,22 +473,13 @@ func _update_nametag(delta: float) -> void:
 
 func _update_grab_line() -> void:
 	grab_line.visible = false # no rope: the pull is enough, and carrying has its own look
-	return
-	var target := Net.get_player(grabbing) if grabbing != 0 else null
-	if target == null or not is_instance_valid(target):
-		grab_line.visible = false
-		return
-	var a := global_position + Vector3(0, 1.1, 0)
-	var b := target.global_position + Vector3(0, 0.9 if target.status != Status.DOWNED else 0.3, 0)
-	var d := a.distance_to(b)
-	if d < 0.1:
-		grab_line.visible = false
-		return
-	grab_line.visible = true
-	var dir := (b - a) / d
-	var up := Vector3.UP if absf(dir.y) < 0.95 else Vector3.RIGHT
-	grab_line.global_transform = Transform3D(Basis.looking_at(dir, up), (a + b) * 0.5)
-	grab_line.scale = Vector3(1, 1, d)
+
+
+## The host is about to free the players (back to the lobby): stop sending position updates for a node it is about
+## to remove, otherwise the host logs "Node not found: .../TransformSync" for packets still in flight.
+func stop_net_sync() -> void:
+	if has_node("TransformSync"):
+		$TransformSync.set_multiplayer_authority(1)
 
 
 func _on_camera_shake(strength: float, origin: Vector3) -> void:
@@ -512,6 +513,7 @@ func _on_status_changed(old: int, v: int) -> void:
 	weapons.on_status_changed(v)
 	if not is_multiplayer_authority():
 		return
+	weapons.show_viewmodel(v != Status.ELIMINATED) # a spectator's camera has no hands or gun in front of it
 	stagger_time = 0.0
 	if v == Status.DOWNED:
 		Sfx.play(&"downed", -2.0)
@@ -809,6 +811,7 @@ func _srv_shove(origin: Vector3, dir: Vector3) -> void:
 
 func _srv_tick(delta: float) -> void:
 	_invuln = maxf(_invuln - delta, 0.0)
+	boost_left = maxf(boost_left - delta, 0.0)
 	if status == Status.DOWNED:
 		_srv_tick_downed(delta)
 	_srv_bowling()
@@ -847,13 +850,42 @@ func srv_take_damage(amount: int, _from: Vector3 = Vector3.ZERO) -> void:
 		return
 	if status != Status.ALIVE or _invuln > 0.0 or amount <= 0:
 		return
+	if armor > 0: # the vest takes 60% of the hit until it breaks
+		var absorbed := mini(int(round(amount * GameConfig.ARMOR_ABSORB)), armor)
+		armor -= absorbed
+		amount -= absorbed
 	hp = maxi(hp - amount, 0)
 	if peer_id == 1:
-		_apply_hurt(amount)
+		_apply_hurt(maxi(amount, 1))
 	else:
-		cl_hurt.rpc_id(peer_id, amount)
+		cl_hurt.rpc_id(peer_id, maxi(amount, 1))
 	if hp == 0:
+		if second_wind:
+			second_wind = false
+			hp = GameConfig.SECOND_WIND_HP
+			_invuln = GameConfig.INVULN_AFTER_REVIVE
+			notify("Second Wind! You got back up")
+			return
 		_srv_down()
+
+
+## Support items (shop / mystery box). They return false when they would do nothing.
+func srv_add_armor(n: int) -> bool:
+	if status != Status.ALIVE or armor >= GameConfig.ARMOR_MAX:
+		return false
+	armor = mini(armor + n, GameConfig.ARMOR_MAX)
+	return true
+
+
+func srv_give_boost(seconds: float) -> void:
+	boost_left = maxf(boost_left, seconds)
+
+
+## New run: forget every support item.
+func srv_reset_support() -> void:
+	armor = 0
+	boost_left = 0.0
+	second_wind = false
 
 
 func _srv_down() -> void:

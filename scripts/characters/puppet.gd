@@ -93,6 +93,15 @@ func build(p_kind: int, shirt: Color, skin_override: Color = Color(0, 0, 0, 0)) 
 		_guns.append(_make_gun(_arm_r, Vector3(0.12, 0.4, 0.12), -0.64, Color(0.55, 0.2, 0.75)))
 		_guns.append(_make_gun(_arm_r, Vector3(0.12, 0.5, 0.12), -0.68, Color(0.75, 0.45, 0.2)))
 		_guns.append(_make_gun(_arm_r, Vector3(0.14, 0.45, 0.14), -0.66, Color(0.95, 0.45, 0.7)))
+		_guns.append(_make_gun(_arm_r, Vector3(0.08, 0.62, 0.1), -0.66, Color(0.2, 0.22, 0.2))) # assault rifle
+		_guns.append(_make_gun(_arm_r, Vector3(0.06, 0.95, 0.07), -0.85, Color(0.1, 0.1, 0.12))) # sniper
+		_guns.append(_make_gun(_arm_r, Vector3(0.08, 0.85, 0.08), -0.78, Color(0.78, 0.6, 0.35))) # bat
+		_guns.append(_make_gun(_arm_r, Vector3(0.03, 0.9, 0.07), -0.8, Color(0.82, 0.84, 0.9))) # katana
+		var axe := _make_gun(_arm_r, Vector3(0.05, 0.75, 0.05), -0.7, Color(0.36, 0.22, 0.12))
+		var head := BoxMesh.new()
+		head.size = Vector3(0.22, 0.18, 0.04)
+		_attach_mesh(axe, "AxeHead", head, Color(0.7, 0.72, 0.78)).position = Vector3(0, -0.3, 0)
+		_guns.append(axe)
 		set_weapon(0)
 
 

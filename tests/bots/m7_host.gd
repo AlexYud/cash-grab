@@ -205,25 +205,10 @@ func run() -> void:
 	var open_set := await _entrances(40)
 	report("A: zombies now also come through the annex windows", open_set.has(5) or open_set.has(6), str(open_set))
 
-	# --- M: mystery box ---
-	player._apply_teleport(Vector3(33.8, 0.1, -5.0))
-	wm.cash = 100
-	await wait(0.8)
-	report("M: the box shows its price", player.prompt_text.contains("$400"), player.prompt_text)
-	await _hold_e(1.6)
-	report("M: too poor for the box", player.weapons.owned.count(true) == 1 and wm.cash == 100)
-	wm.cash = 1000
-	await wait(0.4)
-	await _hold_e(1.8)
-	report("M: the box sells a random weapon for $%d" % GameConfig.BOX_COST, player.weapons.owned.count(true) == 2 and wm.cash == 1000 - GameConfig.BOX_COST, "owned=%d cash=%d" % [player.weapons.owned.count(true), wm.cash])
-	signal_peers("BOX_DONE")
-	await _hold_e(1.8)
-	report("M: and another one, different from what you own", player.weapons.owned.count(true) == 3 and wm.cash == 1000 - 2 * GameConfig.BOX_COST, "owned=%d" % player.weapons.owned.count(true))
-
 	# --- K: medkit ---
 	wm.cash = 1000
 	player.hp = 30
-	player._apply_teleport(Vector3(34.2, 0.1, 5.0))
+	player._apply_teleport(Vector3(34.2, 0.1, 6.6))
 	await wait(0.8)
 	await _hold_e(1.4)
 	report("K: the medkit heals fully for $%d" % GameConfig.MEDKIT_COST, player.hp == GameConfig.PLAYER_MAX_HP and wm.cash == 1000 - GameConfig.MEDKIT_COST, "hp=%d cash=%d" % [player.hp, wm.cash])
@@ -232,6 +217,44 @@ func run() -> void:
 	await _hold_e(1.4)
 	report("K: ...and has a cooldown", player.hp == 50 and wm.cash == 1000 - GameConfig.MEDKIT_COST, "hp=%d" % player.hp)
 	player.hp = 100
+
+	# --- H: the hall behind the annex has its own, dearer pair of levers ---
+	var hall := Annex.find_stage(get_tree(), 2)
+	wm.cash = 1000
+	player._apply_teleport(Vector3(34.6, 0.1, -6.8))
+	await wait(0.8)
+	report("H: the hall lever shows its price", player.prompt_text.contains("$%d" % GameConfig.LEVER_COST_STAGE2), player.prompt_text)
+	await _hold_e(2.0)
+	report("H: pulling it costs $%d and latches it" % GameConfig.LEVER_COST_STAGE2, hall.lever1 and wm.cash == 1000 - GameConfig.LEVER_COST_STAGE2, "cash=%d" % wm.cash)
+	report("H: the hall stays closed meanwhile", not hall.is_open and hall.gate.collision_layer != 0)
+	player._apply_teleport(Vector3(34.6, 0.1, 3.4))
+	await wait(0.8)
+	await _hold_e(2.0)
+	report("H: the second lever starts the door", hall.lever2 and wm.cash == 0, "cash=%d" % wm.cash)
+	var hall_open := await wait_until(func() -> bool: return hall.is_open, 7.0)
+	report("H: the hall gate opens after the animation", hall_open and hall.gate.collision_layer == 0)
+	player._apply_teleport(Vector3(34.5, 0.1, 0.0))
+	await wait(0.4)
+	var into_hall := await walk_to(Vector3(40, 0, 0), 0.5, 3.5)
+	report("H: players can walk into the hall", into_hall and player.global_position.x > 38.0, "x=%.1f" % player.global_position.x)
+	var hall_set := await _entrances(40)
+	report("H: zombies now also come through the hall windows", hall_set.has(7) or hall_set.has(8), str(hall_set))
+
+	# --- M: mystery box (in the hall) sells support items ---
+	player._apply_teleport(Vector3(58.2, 0.1, -5.0))
+	wm.cash = 100
+	await wait(0.8)
+	report("M: the box shows its price", player.prompt_text.contains("$400"), player.prompt_text)
+	await _hold_e(1.6)
+	report("M: too poor for the box", wm.cash == 100)
+	wm.cash = 1000
+	player.hp = 40
+	await wait(0.4)
+	var before := _support_state(player)
+	await _hold_e(1.8)
+	report("M: the box sells a random support item for $%d" % GameConfig.BOX_COST, wm.cash == 1000 - GameConfig.BOX_COST and _support_state(player) != before, "%s -> %s" % [before, _support_state(player)])
+	player.hp = 100
+	signal_peers("BOX_DONE")
 
 	# --- T: Tesla gun chains through three nearby zombies ---
 	player._apply_teleport(Vector3(0, 0.1, 2))
@@ -294,3 +317,7 @@ func run() -> void:
 	signal_peers("M7_done")
 	await wait(0.6)
 	finish()
+
+
+func _support_state(p: Player) -> String:
+	return "%d/%d/%.0f/%s" % [p.hp, p.armor, p.boost_left, str(p.second_wind)]

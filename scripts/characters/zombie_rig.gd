@@ -29,6 +29,7 @@ const GAIT := {
 	2: {"stride": 0.8, "amp": 0.85, "knee": 1.3, "lean": 0.6, "arms": 0.9, "spread": 0.1, "sway": 0.1, "bob": 0.05, "crouch": 0.5, "loll": 0.2},
 	3: {"stride": 1.6, "amp": 0.7, "knee": 1.2, "lean": 0.45, "arms": 0.3, "spread": 0.25, "sway": 0.06, "bob": 0.04, "crouch": 0.3, "loll": 0.15},
 	4: {"stride": 1.1, "amp": 0.4, "knee": 0.5, "lean": -0.06, "arms": 0.2, "spread": 0.75, "sway": 0.16, "bob": 0.03, "crouch": 0.05, "loll": 0.2},
+	5: {"stride": 1.0, "amp": 0.75, "knee": 1.2, "lean": 0.5, "arms": 0.4, "spread": 0.4, "sway": 0.1, "bob": 0.05, "crouch": 0.4, "loll": 0.2},
 }
 
 ## Physical bodies of the ragdoll: bone, the bone the body reaches towards, radius, extra length, mass, joint limits.
@@ -85,6 +86,8 @@ var _state := -1
 var _rising := 0.0 ## time left of the zombie's get-up (its STAGGER state then is not a reel)
 var _attack_t := 0.0
 var _hurt_t := 0.0
+var _tint := Color.WHITE
+var _tint_t := 0.0
 var _life := CORPSE_LIFE
 var _retiring := false
 
@@ -236,6 +239,17 @@ func animate(delta: float, speed: float, state: int, airborne: bool = false) -> 
 		_state = state
 		_state_t = 0.0
 	_state_t += delta
+	# crawlers: the whole body is rolled upside down on the ceiling and pitched up the wall (see Zombie._tick_crawl)
+	var want_pitch := PI / 2.0 if state == Zombie.State.CLIMB else 0.0
+	var want_roll := PI if state == Zombie.State.CEILING else 0.0
+	var turn := 1.0 - exp(-(7.0 if state == Zombie.State.DROP else 10.0) * delta)
+	rotation.x = lerp_angle(rotation.x, want_pitch, turn)
+	rotation.z = lerp_angle(rotation.z, want_roll, turn)
+	if _tint_t > 0.0: # a bleeding / frozen colour wash
+		_tint_t -= delta
+		_mat.albedo_color = Color.WHITE.lerp(_tint, minf(_tint_t / 0.5, 1.0)) # fades out over the last half second
+	elif _mat.albedo_color != Color.WHITE:
+		_mat.albedo_color = Color.WHITE
 	if _hurt_t > 0.0 or _mat.emission_enabled:
 		var f := _hurt_t / 0.18
 		_mat.emission_enabled = f > 0.0
@@ -256,7 +270,7 @@ func animate(delta: float, speed: float, state: int, airborne: bool = false) -> 
 	_write(_pose, w)
 
 
-func _compose(state: int, speed: float, airborne: bool, g: Dictionary) -> void:
+func _compose(state: int, speed: float, _airborne: bool, g: Dictionary) -> void:
 	var p := _pose
 	p.hips = Vector3.ZERO
 	p.hips_rot = Quaternion.IDENTITY
@@ -288,7 +302,7 @@ func _compose(state: int, speed: float, airborne: bool, g: Dictionary) -> void:
 			spread = 0.35
 			head_pitch = 0.5
 			sway = 0.1
-		Zombie.State.LEAP:
+		Zombie.State.LEAP, Zombie.State.DROP:
 			p.plant = false
 			p.lift = 0.55
 			lean = 0.45
@@ -355,7 +369,7 @@ func _compose(state: int, speed: float, airborne: bool, g: Dictionary) -> void:
 	# --- legs ---
 	var amp_l := amp
 	var amp_r := amp * (1.0 - _limp)
-	if state == Zombie.State.LEAP:
+	if state == Zombie.State.LEAP or state == Zombie.State.DROP:
 		_leg(p, 1, 0.9, 1.3, 0.35, 0.5)
 		_leg(p, -1, -0.5, 0.2, 0.35, 0.4)
 	elif state == Zombie.State.LATCHED:
@@ -371,7 +385,7 @@ func _compose(state: int, speed: float, airborne: bool, g: Dictionary) -> void:
 		_leg_cycle(p, 1, ph, amp_l, knee, crouch, kdrag)
 		_leg_cycle(p, -1, ph + PI, amp_r, knee, crouch, _limp * 0.6)
 	# --- arms ---
-	_arms(p, state, reach, spread, g)
+	_arms(p, state, reach, spread)
 
 
 ## One leg from a swing angle (forward positive) and a knee bend, both in the hips' frame.
@@ -393,7 +407,7 @@ func _leg_cycle(p: Pose, side: int, ph: float, amp: float, knee: float, crouch: 
 	_leg(p, side, swing, bend, 0.07, 0.0)
 
 
-func _arms(p: Pose, state: int, reach: float, spread: float, g: Dictionary) -> void:
+func _arms(p: Pose, state: int, reach: float, spread: float) -> void:
 	var wob := sin(_t * 2.3 + _seed)
 	var wob2 := sin(_t * 1.7 + _seed * 3.0)
 	var forward_l := Vector3(0.18, -0.12 + 0.08 * wob, 0.97)
@@ -412,7 +426,7 @@ func _arms(p: Pose, state: int, reach: float, spread: float, g: Dictionary) -> v
 		a_l = hang_l.lerp(forward_l, r).normalized()
 		a_r = hang_r.lerp(forward_r, r).normalized()
 	match state:
-		Zombie.State.LEAP:
+		Zombie.State.LEAP, Zombie.State.DROP:
 			a_l = Vector3(0.12, 0.05, 1.0).normalized()
 			a_r = Vector3(-0.12, 0.05, 1.0).normalized()
 			f_up = 0.0
@@ -714,3 +728,9 @@ func retire() -> void:
 		pb.collision_layer = 0
 		pb.collision_mask = 0
 	get_tree().create_timer(0.9).timeout.connect(queue_free)
+
+
+## A colour wash over the whole body for a while (bleeding red, frozen blue).
+func set_tint(c: Color, seconds: float) -> void:
+	_tint = c
+	_tint_t = seconds

@@ -38,7 +38,8 @@ func _ready() -> void:
 		_pool2d.append(p2)
 	_queue = [&"pistol", &"shotgun", &"reload", &"empty", &"hit_flesh", &"hit_world", &"shove",
 		&"zombie_groan", &"zombie_groan2", &"zombie_attack", &"zombie_die", &"board_break", &"hammer",
-		&"explosion", &"downed", &"revive", &"wave_start", &"hit_marker", &"hurt", &"launch", &"yank", &"disco"]
+		&"explosion", &"downed", &"revive", &"wave_start", &"hit_marker", &"hurt", &"launch", &"yank", &"disco",
+		&"assault_rifle", &"sniper", &"bat", &"katana", &"axe", &"card", &"ready"]
 
 
 func _process(_delta: float) -> void:
@@ -121,6 +122,11 @@ func _make(key: StringName) -> AudioStreamWAV:
 		&"launch": return _whoosh()
 		&"yank": return _whoosh()
 		&"disco": return _chime()
+		&"assault_rifle": return _burst(0.12, 30.0, 0.5, 150.0, 0.55)
+		&"sniper": return _burst(0.7, 8.0, 0.2, 60.0, 1.0)
+		&"bat", &"katana", &"axe": return _whoosh()
+		&"card": return _blip(900.0, 0.08, 60.0)
+		&"ready": return _chime()
 	return _click(0.05)
 
 

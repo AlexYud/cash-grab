@@ -1,7 +1,8 @@
 # CashGrab - Co-op Wave Survival (prototype 0.1)
 
-Comedy-first, round-based FPS for 1-4 players, built from the GDD (v0.1). A saloon with five barricaded windows plus a
-lockable east annex (two more windows), six weapons, five zombie types, ten waves, a shared cash pot. Godot **4.7** +
+Comedy-first, round-based FPS for 1-4 players, built from the GDD (v0.1). A saloon with five barricaded windows plus two
+lockable rooms behind it (annex and hall, two windows each), eleven weapons with roguelike reward cards, six zombie
+types, endless waves, a shared cash pot. Godot **4.7** +
 GDScript, Jolt Physics.
 
 ## Run it
@@ -27,14 +28,19 @@ GDScript, Jolt Physics.
 | GDD | Where | Notes |
 |---|---|---|
 | Co-op 1-4, lobby/host/join/disconnect | `autoload/net.gd`, `ui/` | listen-server over ENet; late join; full game turns a 5th player away; leaving cleans up grabs |
-| Gunplay, 6 guns | `player/player_weapons.gd`, `resources/weapons/*.tres` | hitscan, falloff, recoil, reload, hit/kill markers; edit the `.tres` files to balance. **You start with only the pistol**; the rest come from the mystery box. **Headshots do 2x damage** (gold hit marker, not an instakill). Holding **RMB** aims down the sights. **Yank Gun** reels what it hits (zombie or teammate) in to you; **Disco Blaster** makes zombies dance for 3 s instead of attacking; **Tesla Gun** arcs lightning from the zombie it hits to the three nearest zombies (60/40/25% of the damage, blue bolts + flash); **Boing Gun** bounces zombies into the air and trips them |
+| Gunplay, 11 weapons | `player/player_weapons.gd`, `resources/weapons/*.tres` | hitscan, falloff, recoil, reload, hit/kill markers; edit the `.tres` files to balance. **You start with only the pistol**; new weapons and buffs come from the reward cards between waves (see below). **Headshots do 2x damage** (gold hit marker, not an instakill). Holding **RMB** aims down the sights. **Yank Gun** reels what it hits (zombie or teammate) in to you; **Disco Blaster** makes zombies dance for 3 s instead of attacking; **Tesla Gun** arcs lightning from the zombie it hits to the three nearest zombies (60/40/25% of the damage, blue bolts + flash); **Boing Gun** bounces zombies into the air and trips them |
 | Shared cash | `world/wave_manager.gd` (`cash`), `ui/hud.gd` | one pot for the whole party, shown top-left: +$10 per kill ($25 for specials, +$5 for a headshot kill), +$5 per repaired board. Everything below is paid from it |
 | Annex (new area) | `world/annex.gd`, `world/interactable.gd`, `tools/build_scenes.gd` | a bigger room east of the saloon (more cover, 2 more barricaded windows, lamps) behind a gate. Two **levers** in the saloon cost $250 each (hold **E** 1.5 s). The first latches for 20 s: pull the second in time (one player can do both) and a 4 s door animation opens the gate. **Hold E on a latched lever to put it back for a refund**; if the 20 s run out it refunds itself. Annex windows only spawn zombies once it is open |
-| Mystery box / health shops | `world/interactable.gd` | in the annex: **mystery box** ($400) gives a random weapon you do not own yet; **medkit** ($250, full heal). In the saloon: **bandages** ($75, +25 HP). Shops have a 30 s cooldown per player. They are the only healing besides snacks |
+| Mystery box / health shops | `world/interactable.gd` | in the hall: **mystery box** ($400) gives a random **support item**: bandages, a full medkit, an armor vest (+50, absorbs 60% of every hit), adrenaline (30 s of speed) or Second Wind (one free self-revive). In the annex: **medkit** ($250, full heal). In the saloon: **bandages** ($75, +25 HP). Shops have a 30 s cooldown per player. They are the only healing besides snacks |
 | Invisible walls | `world/barricade.gd`, `scenes/world/barricade.tscn` (`PlayerWall`) | every window has a wall only players collide with, so nobody can leave the building even when all boards are gone (zombies still climb in) |
 | Stumble | `player/player.gd` (`_srv_stumble`) | running or walking into a zombie lying on the floor trips you for about a second; jumping over it is safe |
 | Saved settings | `ui/pause_menu.gd`, `ui/ui_kit.gd` | master volume and mouse sensitivity are saved to `user://settings.cfg` (voice and per-player volumes already were) |
-| Waves | `world/wave_manager.gd`, `game_config.gd` | 10 escalating waves, break between them, scales with player count |
+| Waves | `world/wave_manager.gd`, `game_config.gd` (`wave_cfg`) | **endless**: the table covers ten waves, then every wave is bigger, tougher and faster (capped); scales with player count. Between waves nothing counts down: the next wave starts when **every player has pressed ready** ([Enter] or the button) |
+| Reward cards | `weapons/weapon_cards.gd`, `ui/card_screen.gd`, `world/wave_manager.gd` | every time a wave is cleared each player gets **three personal cards** (random weapons, rolled on the host): a weapon you do not have shows as **NEW** with a rotating 3D model, name and a one-line description; one you already own becomes an **UPGRADE** card. Click a card or press [1] [2] [3]; [Tab] hides the screen so you can walk around, [Enter] (or the button) is ready. Upgrades stack: damage, bigger magazine, fire rate, knockback, and effects: **Bleeding**, **Vampiric** (lifesteal), **Frostbite** (slow), **Static Spark** (lightning to two more zombies), **Boom Rounds** (area burst), **Springy** (boing) and **Disco Fever** |
+| New weapons | `weapons/gun_models.gd`, `resources/weapons/*.tres` | **Assault Rifle** (hold to fire, 30 rounds), **Sniper Rifle** (RMB zooms far in, one shot kills most zombies), and three melee weapons that need no ammo: **Baseball Bat** (huge knockback, sometimes flattens them), **Katana** (fast, hits up to 3), **Axe** (slow, cleaves up to 5). Number keys pick the Nth weapon you own |
+| The hall (part 3) | `world/annex.gd` (`stage`), `tools/build_scenes.gd` | a third room behind the annex's east wall, opened by its own pair of levers on that wall at **$500 each** (same latch / refund rules as the annex). It has two more windows, the mystery box and plenty of cover |
+| Crawler | `enemy/zombie.gd` (`_tick_crawl`), `characters/zombie_rig.gd` | climbs out of a wall vent, runs up the wall and **walks the ceiling upside down** towards the nearest player, then drops on them (damage + a shove) and fights on the ground. It can be shot on the ceiling. Vents exist in every room and only open with that room. Appears from wave 4 |
+| Team bars | `ui/hud.gd` | everybody's health (and armor) as a thin bar with a name in the top-left corner, DOWN / OUT states included |
 | Barricades | `world/barricade.gd` | 5 boards, zombies break them, hold **E** to rebuild, blocked while something stands in the gap |
 | Grab friends | `player/player.gd` (`_srv_grab`, `_srv_throw`) | pull a teammate to you. **Grab a downed teammate and you carry them** (your weapons lock): **Fire** throws them. Any player flying fast (thrown, shoved, blown up) is a bowling ball and knocks zombies over |
 | Shove | `player/player.gd` (`_srv_shove`) | cone in front of you; launches teammates, staggers zombies (half the time it knocks them limp into a ragdoll; Huggers always) |
@@ -69,7 +75,7 @@ and `resources/weapons/*.tres`.
 
 - **Keys**: F shove, G grab, E repair/revive, V push-to-talk, M mute. Edit them in Project > Project Settings > Input Map.
 - **Entrances** are floor-level doorways (no window vaulting): south x2, west x2, north in the saloon, plus north and
-  south in the annex (7 in total, `Barricades/*` indexed 0-6 with matching `EnemySpawns/E0-E6`).
+  south in the annex (9 in total, `Barricades/*` indexed 0-8 with matching `EnemySpawns/E0-E8`; 5 saloon, 2 annex, 2 hall).
 - **Cash amounts** (`CASH_*`, `LEVER_COST`, `BOX_COST`, `BANDAGE_COST`, `MEDKIT_COST` in `game_config.gd`) are first guesses.
 - **Downed players** are ignored by zombies and bleed out after 45 s; **eliminated** players come back at full health
   when the wave is cleared (`RESTORE_ON_WAVE_CLEAR`), so nobody sits out a whole test.
@@ -90,7 +96,7 @@ needs a window.
 
 ```powershell
 $env:GODOT_BIN = "C:\path\to\Godot_v4.7-stable_win64_console.exe"   # the console exe must sit next to the main exe
-.\tests\run_tests.ps1 -Test all          # or one of: m0 m1 m2 m3a m3b m4a m4b m4c m4d m5 m6 m7 m8 nav soak2 soak4 hard2 hard4
+.\tests\run_tests.ps1 -Test all          # or one of: m0 m1 m2 m3a m3b m4a m4b m4c m4d m5 m6 m7 m8 m9 m10 nav soak2 soak4 hard2 hard4
 ```
 
 | Test | Covers |
@@ -107,13 +113,15 @@ $env:GODOT_BIN = "C:\path\to\Godot_v4.7-stable_win64_console.exe"   # the consol
 | m5 | clumsy zombies trip and lie down, brute charge, snack drop + healing, hugger latch + shove-off, friendly fire without the death ragdoll |
 | m6 | carry and throw a downed teammate (bowling), Yank Gun, Disco Blaster, Leaper pounce, Bloater burst |
 | m7 | (pistol-only start) shared cash from kills / headshot kills / specials / board repair, headshot = 2x damage, invisible walls at open windows, bandage stand + per-player cooldown, annex: price check, pull, cancel + refund, timeout refund, single-player two-lever flow, closed gate blocks, door animation, annex windows activate, mystery box, medkit, Tesla chain + lightning, Boing launch, stumble over a fallen zombie, ADS |
+| m9 | the ready button (no countdown, waits for everybody), three reward cards per player, picking, a second pick doing nothing, buff numbers, every card effect (bleed, freeze, lifesteal, spark, boing, disco, blast), endless waves (wave 10 -> 11), armor, Second Wind, adrenaline, team bars, a spectator has no gun |
+| m10 | assault rifle auto-fire, sniper zoom + one-shot, bat / katana / axe cones, the crawler (wall -> ceiling -> upside down on both peers -> shot -> drop -> lands), vents in all rooms |
 | m8 | rigged zombies: every kind builds a 25-bone rig with its feet on the floor, poses differ per state (cling, charge, dance, swing, walk cycle), a trip hands the skeleton to physics (host and client), the limp body lies down near its hit shape and gets back up, a blast flings the ragdoll, a flying ragdoll bowls over a neighbour, a zombie killed while limp leaves a corpse in that pose, corpse cap |
 | nav | every window has a navmesh route from outside to the players, and the shop / lever spots are reachable |
-| soak2 / soak4 | a whole ten-wave run with 2 / 4 scripted players at 3x speed in god mode (so unskilled bots always finish); the host opens the annex from wave 3 so its windows are exercised too |
+| soak2 / soak4 | an eight-wave run with 2 / 4 scripted players at 3x speed in god mode (so unskilled bots always finish): they pick cards and press ready between waves, rotate weapons, and the host opens the annex from wave 3 and the hall from wave 5 so every window and vent is exercised |
 | hard2 / hard4 | the same bots without god mode, as a difficulty probe; not part of `all` and allowed to fail |
 
 Other bots: `shots` / `shots2_host` + `shots2_client` (screenshots; these need real windows, not `--headless`).
-Every test except the weapon-shop rules (`m7`, `Plain = $true`) runs with `--all-weapons`, so bots start with all six guns.
+Every test except the weapon-shop rules (`m7`, `Plain = $true`) runs with `--all-weapons`, so bots start with every gun.
 
 Useful command-line flags (after `--`), see `scripts/debug/dev_harness.gd`: `--solo`, `--host[=PORT]`,
 `--join=IP[:PORT]`, `--autostart=N`, `--bot=NAME`, `--hold-waves`, `--god`, `--all-weapons`, `--time-scale=N`, `--shot=PATH`.

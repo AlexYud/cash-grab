@@ -11,6 +11,7 @@ var _hp_bar: ProgressBar
 var _hp_label: Label
 var _status: Label
 var _weapon: Label
+var _slots: Label
 var _ammo: Label
 var _reload_bar: ProgressBar
 var _team: VBoxContainer
@@ -27,6 +28,7 @@ var _announce_tween: Tween
 var _notice: Label
 var _notice_tween: Tween
 var _team_timer := 0.0
+var _team_rows := {} ## peer id -> the widgets of that player's row
 
 
 func _ready() -> void:
@@ -183,13 +185,16 @@ func _build() -> void:
 	_ammo.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	br.add_child(_ammo)
 	_reload_bar = UiKit.bar(UiKit.ACCENT, Vector2(160, 8))
+	_slots = UiKit.label("", 15, UiKit.DIM)
+	_slots.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	br.add_child(_slots)
 	br.add_child(_reload_bar)
 
 	# left: team list
 	_team = VBoxContainer.new()
-	_team.set_anchors_preset(Control.PRESET_CENTER_LEFT)
-	_team.grow_vertical = Control.GROW_DIRECTION_BOTH
-	_team.offset_left = 20
+	_team.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	_team.position = Vector2(20, 54)
+	_team.add_theme_constant_override("separation", 2)
 	_team.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_team)
 
@@ -217,7 +222,7 @@ func _process(delta: float) -> void:
 	var hp_frac := p.hp / float(GameConfig.PLAYER_MAX_HP)
 	_hp_bar.value = hp_frac
 	_hp_bar.add_theme_stylebox_override("fill", _fill_style(UiKit.GOOD.lerp(UiKit.BAD, 1.0 - clampf(hp_frac * 1.6, 0.0, 1.0))))
-	_hp_label.text = str(p.hp)
+	_hp_label.text = str(p.hp) + ("  +%d armor" % p.armor if p.armor > 0 else "")
 	match p.status:
 		Player.Status.DOWNED:
 			_status.text = "YOU ARE DOWN - crawl to a teammate!  Bleeding out in %ds" % ceili(p.bleed_left)
@@ -226,10 +231,24 @@ func _process(delta: float) -> void:
 		Player.Status.ELIMINATED:
 			_status.text = "OUT - you return when the wave is cleared (click to change spectate target)"
 		_:
-			_status.text = ""
+			var buffs := PackedStringArray()
+			if p.boost_left > 0.0:
+				buffs.append("Adrenaline %ds" % ceili(p.boost_left))
+			if p.second_wind:
+				buffs.append("Second Wind ready")
+			_status.text = "  ".join(buffs)
 	var w := p.weapons
-	_weapon.text = w.list[w.current].display_name
-	_ammo.text = "%d / ∞" % w.ammo[w.current]
+	var cur := w.list[w.current]
+	var summary := w.mod_summary(w.current)
+	_weapon.text = cur.display_name + ("  [%s]" % summary if summary != "" else "")
+	_ammo.text = "MELEE" if cur.melee else "%d / ∞" % w.ammo[w.current]
+	var slots := PackedStringArray()
+	var nth := 0
+	for i in w.list.size():
+		if w.owned[i]:
+			nth += 1
+			slots.append(("[%d %s]" if i == w.current else "%d %s") % [nth, w.list[i].display_name])
+	_slots.text = "   ".join(slots) if slots.size() > 1 else ""
 	_reload_bar.visible = w.is_reloading()
 	_reload_bar.value = w.reload_fraction()
 	_prompt.text = p.prompt_text
@@ -266,21 +285,31 @@ func _update_top() -> void:
 		return
 	match waves.state:
 		WaveManager.State.BREAK:
-			_wave_label.text = "WAVE %d / %d" % [mini(waves.wave + 1, waves.total_waves), waves.total_waves]
-			_sub_label.text = "Next wave in %d s  -  repair the barricades [E]" % ceili(maxf(waves.break_left, 0.0))
+			_wave_label.text = "WAVE %d" % (waves.wave + 1)
+			var me := Net.local_player
+			var total := Net.all_players().size()
+			var is_ready := me != null and waves.is_ready(me.peer_id)
+			var line := "READY - waiting for the others (%d/%d)" % [waves.ready_ids.size(), total] if is_ready \
+					else "Repair and reposition  -  press [Enter] when you are ready (%d/%d)" % [waves.ready_ids.size(), total]
+			if not waves.my_offers.is_empty():
+				line = "[Tab] opens your reward cards  -  " + line
+			_sub_label.text = line
+			if Net.ui_blocking and not waves.my_offers.is_empty() and Net.local_player != null: # the card screen has its own title
+				_sub_label.text = ""
+				_wave_label.text = ""
+				_announce.modulate.a = 0.0
 		WaveManager.State.ACTIVE:
-			_wave_label.text = "WAVE %d / %d" % [waves.wave, waves.total_waves]
+			_wave_label.text = "WAVE %d" % waves.wave
 			_sub_label.text = "Zombies left: %d" % (waves.enemies_alive + waves.to_spawn)
 		WaveManager.State.VICTORY:
 			_wave_label.text = "VICTORY"
 			_sub_label.text = ""
 		WaveManager.State.GAME_OVER:
 			_wave_label.text = "GAME OVER"
-			_sub_label.text = "Reached wave %d / %d" % [waves.wave, waves.total_waves]
+			_sub_label.text = "You reached wave %d" % waves.wave
 		_:
 			_wave_label.text = ""
 			_sub_label.text = ""
-
 
 func _update_mic() -> void:
 	var t := "MIC "
@@ -299,23 +328,71 @@ func _update_mic() -> void:
 	_mic.add_theme_color_override("font_color", c)
 
 
+## Everybody's health, small and tucked into the top-left corner: name, a thin bar (with a blue strip for armor) and
+## the number (or DOWN / OUT).
 func _update_team() -> void:
-	for c in _team.get_children():
-		c.queue_free()
+	var seen := {}
 	for p in Net.all_players():
-		if p == Net.local_player:
-			continue
-		var t := "%s  %d" % [p.player_name, p.hp]
+		seen[p.peer_id] = true
+		var row: Dictionary = _team_rows.get(p.peer_id, {})
+		if row.is_empty():
+			row = _make_team_row(p)
+			_team_rows[p.peer_id] = row
+		var frac := p.hp / float(GameConfig.PLAYER_MAX_HP)
 		var col := p.color().lightened(0.3)
+		var txt := str(p.hp)
+		var bar_col := UiKit.GOOD.lerp(UiKit.BAD, 1.0 - clampf(frac * 1.6, 0.0, 1.0))
 		if p.status == Player.Status.DOWNED:
-			t = "%s  DOWN %ds" % [p.player_name, ceili(p.bleed_left)]
-			col = UiKit.BAD
+			txt = "DOWN %ds" % ceili(p.bleed_left)
+			bar_col = UiKit.BAD
+			frac = 0.0
 		elif p.status == Player.Status.ELIMINATED:
-			t = "%s  out" % p.player_name
+			txt = "OUT"
 			col = UiKit.DIM
+			frac = 0.0
 		if (p.sync_flags & Player.FLAG_SPEAK) != 0:
-			t += "  ))"
-		var l := UiKit.label(t, 18, col)
-		l.add_theme_constant_override("outline_size", 4)
-		l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
-		_team.add_child(l)
+			txt += " ))"
+		var nm: Label = row["name"]
+		nm.text = p.player_name.left(9) + (" *" if p == Net.local_player else "")
+		nm.add_theme_color_override("font_color", col)
+		var bar: ProgressBar = row["bar"]
+		bar.value = frac
+		bar.add_theme_stylebox_override("fill", _fill_style(bar_col))
+		var ab: ProgressBar = row["armor"]
+		ab.visible = p.armor > 0
+		ab.value = p.armor / float(GameConfig.ARMOR_MAX)
+		(row["txt"] as Label).text = txt
+	for id in _team_rows.keys():
+		if not seen.has(id):
+			(_team_rows[id]["box"] as Control).queue_free()
+			_team_rows.erase(id)
+
+
+func _make_team_row(_p: Player) -> Dictionary:
+	var box := HBoxContainer.new()
+	box.add_theme_constant_override("separation", 6)
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var nm := UiKit.label("", 14)
+	nm.custom_minimum_size = Vector2(84, 0)
+	nm.add_theme_constant_override("outline_size", 4)
+	nm.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	box.add_child(nm)
+	var stack := Control.new() # health bar with a thin armor strip under it
+	stack.custom_minimum_size = Vector2(96, 14)
+	stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(stack)
+	var bar := UiKit.bar(UiKit.GOOD, Vector2(96, 8))
+	bar.position = Vector2(0, 1)
+	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	stack.add_child(bar)
+	var ab := UiKit.bar(Color(0.45, 0.7, 1.0), Vector2(96, 3))
+	ab.position = Vector2(0, 10)
+	ab.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ab.visible = false
+	stack.add_child(ab)
+	var txt := UiKit.label("", 14, UiKit.DIM)
+	txt.add_theme_constant_override("outline_size", 4)
+	txt.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	box.add_child(txt)
+	_team.add_child(box)
+	return {"box": box, "name": nm, "bar": bar, "armor": ab, "txt": txt}

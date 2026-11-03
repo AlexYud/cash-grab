@@ -7,6 +7,8 @@ extends Node3D
 
 signal opened
 
+@export var stage := 1 ## 1 = the east annex, 2 = the hall behind it (each has its own pair of levers)
+
 var lever1 := false
 var lever2 := false
 var latch_left := 0.0 ## seconds left to pull the second lever (replicated, drives the prompt)
@@ -49,7 +51,7 @@ func srv_pull(slot: int) -> bool:
 	if is_open or door_running() or lever_pulled(slot):
 		return false
 	var wm := get_tree().get_first_node_in_group("wave_manager") as WaveManager
-	if wm == null or not wm.srv_spend(GameConfig.LEVER_COST):
+	if wm == null or not wm.srv_spend(lever_cost()):
 		return false
 	if slot == 0:
 		lever1 = true
@@ -78,7 +80,7 @@ func srv_cancel(slot: int) -> bool:
 func _refund() -> void:
 	var wm := get_tree().get_first_node_in_group("wave_manager") as WaveManager
 	if wm != null:
-		wm.srv_add_cash(GameConfig.LEVER_COST)
+		wm.srv_add_cash(lever_cost())
 
 
 func _physics_process(delta: float) -> void:
@@ -116,7 +118,7 @@ func _set_open(v: bool) -> void:
 		Sfx.play_at(&"explosion", gate.global_position, -8.0, 0.5)
 		var wm := get_tree().get_first_node_in_group("wave_manager") as WaveManager
 		if wm != null:
-			wm.announce.emit("THE EAST ANNEX IS OPEN")
+			wm.announce.emit("THE EAST ANNEX IS OPEN" if stage == 1 else "THE HALL IS OPEN")
 		opened.emit()
 	elif not v and not is_zero_approx(_door_vis):
 		_door_vis = 0.0 # restart: the gate slams back down
@@ -126,3 +128,14 @@ func _apply_gate() -> void:
 	gate.collision_layer = 0 if is_open else GameConfig.L_WORLD
 	if not is_open and door_t <= 0.0:
 		_door_vis = 0.0
+
+
+func lever_cost() -> int:
+	return GameConfig.LEVER_COST if stage == 1 else GameConfig.LEVER_COST_STAGE2
+
+
+static func find_stage(tree: SceneTree, n: int) -> Annex:
+	for a in tree.get_nodes_in_group("annex"):
+		if (a as Annex).stage == n:
+			return a as Annex
+	return null

@@ -235,6 +235,8 @@ func srv_try_snack(pos: Vector3, zombie_kind: int) -> void:
 		chance = GameConfig.SNACK_CHANCE_LEAPER
 	elif zombie_kind == Zombie.Kind.BLOATER:
 		chance = GameConfig.SNACK_CHANCE_BLOATER
+	elif zombie_kind == Zombie.Kind.CRAWLER:
+		chance = GameConfig.SNACK_CHANCE_CRAWLER
 	if Net.debug_snack_chance >= 0.0:
 		chance = Net.debug_snack_chance
 	if randf() >= chance:

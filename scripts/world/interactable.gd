@@ -12,6 +12,7 @@ const REACH := 1.9
 @export var kind: Kind = Kind.LEVER
 @export var index := 0 ## unique among interactables: what the player sends to the host
 @export var slot := 0 ## which lever (0/1) this is
+@export var stage := 1 ## which pair of levers (see Annex.stage)
 
 var _hold := {} ## host: peer -> seconds held
 var _spent := {} ## host: peers that already used it and have not let go of E yet
@@ -24,7 +25,7 @@ var _reveal: Label3D
 var annex: Annex:
 	get:
 		if annex == null:
-			annex = get_tree().get_first_node_in_group("annex") as Annex
+			annex = Annex.find_stage(get_tree(), stage)
 		return annex
 
 
@@ -57,7 +58,7 @@ func _cash() -> int:
 func _price() -> int:
 	match kind:
 		Kind.LEVER:
-			return GameConfig.LEVER_COST
+			return annex.lever_cost() if annex != null else GameConfig.LEVER_COST
 		Kind.BOX:
 			return GameConfig.BOX_COST
 		Kind.BANDAGE:
@@ -65,11 +66,46 @@ func _price() -> int:
 	return GameConfig.MEDKIT_COST
 
 
-func _all_owned(p: Player) -> bool:
-	for i in range(1, p.weapons.owned.size()):
-		if not p.weapons.owned[i]:
-			return false
-	return true
+## The mystery box sells support items instead of weapons (those come from the reward cards).
+## Weighted roll among the ones that would actually do something for this player.
+static func roll_support(p: Player) -> StringName:
+	var pool := {}
+	if p.hp < GameConfig.PLAYER_MAX_HP:
+		pool[&"bandage"] = 3.0
+		pool[&"medkit"] = 1.5
+	if p.armor < GameConfig.ARMOR_MAX:
+		pool[&"armor"] = 2.5
+	pool[&"adrenaline"] = 2.0
+	if not p.second_wind:
+		pool[&"second_wind"] = 1.0
+	var total := 0.0
+	for k in pool:
+		total += pool[k]
+	var r := randf() * total
+	for k in pool:
+		r -= pool[k]
+		if r <= 0.0:
+			return k
+	return &"adrenaline"
+
+
+static func _apply_support(p: Player, item: StringName) -> String:
+	match item:
+		&"bandage":
+			p.srv_heal(GameConfig.BANDAGE_HEAL)
+			return "Bandages (+%d HP)" % GameConfig.BANDAGE_HEAL
+		&"medkit":
+			p.srv_heal(GameConfig.PLAYER_MAX_HP)
+			return "Full Medkit"
+		&"armor":
+			p.srv_add_armor(GameConfig.ARMOR_ITEM)
+			return "Armor Vest (+%d)" % GameConfig.ARMOR_ITEM
+		&"adrenaline":
+			p.srv_give_boost(GameConfig.ADRENALINE_TIME)
+			return "Adrenaline (%d s of speed)" % int(GameConfig.ADRENALINE_TIME)
+		_:
+			p.second_wind = true
+			return "Second Wind (one free revive)"
 
 
 ## HUD text for this player; "" means there is nothing to show (hidden).
@@ -84,16 +120,14 @@ func prompt(p: Player) -> String:
 			if annex.lever_pulled(slot):
 				return "Hold [E] to put the lever back (refund $%d)  -  %d s left" % [price, ceili(annex.latch_left)]
 			if _cash() < price:
-				return "Pull the lever to open the annex  -  needs $%d" % price
+				return "Pull the lever to open %s  -  needs $%d" % ["the annex" if stage == 1 else "the hall", price]
 			if annex.lever1 or annex.lever2:
 				return "Hold [E] to pull the second lever ($%d)  -  %d s left" % [price, ceili(annex.latch_left)]
 			return "Hold [E] to pull the lever ($%d), then pull the other one" % price
 		Kind.BOX:
-			if _all_owned(p):
-				return "Mystery Box  -  you already own every weapon"
 			if _cash() < price:
 				return "Mystery Box  -  needs $%d" % price
-			return "Hold [E] for a random weapon ($%d)" % price
+			return "Hold [E] for a random support item ($%d)" % price
 		Kind.BANDAGE:
 			if p.hp >= GameConfig.PLAYER_MAX_HP:
 				return "Bandages  -  you are at full health"
@@ -117,7 +151,7 @@ func can_hold(p: Player) -> bool:
 				return false
 			return annex.lever_pulled(slot) or _cash() >= price
 		Kind.BOX:
-			return _cash() >= price and not _all_owned(p)
+			return _cash() >= price
 		Kind.BANDAGE, Kind.MEDKIT:
 			return _cash() >= price and p.hp < GameConfig.PLAYER_MAX_HP
 	return false
@@ -161,7 +195,7 @@ func _srv_use(p: Player) -> void:
 		Kind.LEVER:
 			if annex.lever_pulled(slot):
 				if annex.srv_cancel(slot):
-					p.notify("Lever put back - refunded $%d" % GameConfig.LEVER_COST)
+					p.notify("Lever put back - refunded $%d" % annex.lever_cost())
 			elif annex.srv_pull(slot):
 				fx_lever.rpc()
 				if annex.door_running():
@@ -169,16 +203,12 @@ func _srv_use(p: Player) -> void:
 				else:
 					p.notify("Lever pulled - now the other one (%d s)" % int(GameConfig.LEVER_WINDOW))
 		Kind.BOX:
-			var pool: Array[int] = []
-			for i in range(1, p.weapons.list.size()):
-				if not p.weapons.owned[i]:
-					pool.append(i)
-			if pool.is_empty() or not wm.srv_spend(GameConfig.BOX_COST):
+			var item := roll_support(p)
+			if item == &"" or not wm.srv_spend(GameConfig.BOX_COST):
 				return
-			var pick: int = pool.pick_random()
-			p.weapons.give_weapon.rpc(pick)
-			fx_box.rpc(p.weapons.list[pick].display_name)
-			p.notify("You got the %s!" % p.weapons.list[pick].display_name)
+			var label := _apply_support(p, item)
+			fx_box.rpc(label)
+			p.notify("You got: %s!" % label)
 		Kind.BANDAGE, Kind.MEDKIT:
 			var now := Time.get_ticks_msec()
 			var ready_at: int = int(_cool.get(p.peer_id, 0))

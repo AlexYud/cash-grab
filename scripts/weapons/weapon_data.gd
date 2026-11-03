@@ -20,7 +20,13 @@ extends Resource
 @export var player_stagger := 0.0
 @export var recoil_deg := 1.4 ## camera kick per shot
 @export var switch_time := 0.35
-@export var special: StringName = &"" ## "yank" pulls what it hits toward the shooter; "disco" makes zombies dance
+@export var special: StringName = &"" ## "yank" pulls what it hits toward the shooter; "disco" makes zombies dance; "bonk" (bat) sometimes knocks them over
+@export var auto := false ## holding fire keeps shooting
+@export var ads_fov := 0.0 ## field of view while aiming down sights (0 = the default)
+@export var melee := false ## swings instead of shooting: hits every zombie in a cone in front, no ammo
+@export var melee_range := 2.6
+@export var melee_half_arc_deg := 55.0
+@export var melee_targets := 2 ## how many zombies one swing can hit
 
 
 func damage_at(distance: float) -> float:

@@ -282,7 +282,7 @@ func _build_player() -> void:
 	line.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_add(root, line, "GrabLine")
 	_sync(root, "TransformSync", ["sync_pos", "sync_yaw", "sync_pitch", "sync_vel", "sync_flags", "sync_weapon"], 0.033)
-	_sync(root, "StateSync", ["hp", "status", "bleed_left", "revive_progress", "grabbed_by", "grabbing", "kills", "hugged"], 0.1)
+	_sync(root, "StateSync", ["hp", "status", "bleed_left", "revive_progress", "grabbed_by", "grabbing", "kills", "hugged", "armor", "boost_left", "second_wind"], 0.1)
 	_save(root, "res://scenes/player/player.tscn")
 
 
@@ -342,11 +342,11 @@ func _build_saloon() -> void:
 
 	# ground (street) + perimeter fence
 	# the ground runs east far enough to wrap the annex too
-	_solid_box(nav, "Ground", Vector3(9, -0.2, 2.0), Vector3(71, 0.4, 49), DIRT)
+	_solid_box(nav, "Ground", Vector3(20, -0.2, 2.0), Vector3(93, 0.4, 49), DIRT)
 	_solid_box(nav, "FenceW", Vector3(-26.9, 1.5, 2.0), Vector3(0.8, 3.0, 50), DARK_WOOD)
-	_solid_box(nav, "FenceE", Vector3(44.9, 1.5, 2.0), Vector3(0.8, 3.0, 50), DARK_WOOD)
-	_solid_box(nav, "FenceN", Vector3(9, 1.5, -22.9), Vector3(72, 3.0, 0.8), DARK_WOOD)
-	_solid_box(nav, "FenceS", Vector3(9, 1.5, 26.9), Vector3(72, 3.0, 0.8), DARK_WOOD)
+	_solid_box(nav, "FenceE", Vector3(66.9, 1.5, 2.0), Vector3(0.8, 3.0, 50), DARK_WOOD)
+	_solid_box(nav, "FenceN", Vector3(20, 1.5, -22.9), Vector3(94, 3.0, 0.8), DARK_WOOD)
+	_solid_box(nav, "FenceS", Vector3(20, 1.5, 26.9), Vector3(94, 3.0, 0.8), DARK_WOOD)
 
 	# walls: interior is x in [-11, 11], z in [-8, 8]; 0.4 thick, 4 high. Doorways are 3 wide.
 	var h := 4.0
@@ -377,7 +377,19 @@ func _build_saloon() -> void:
 	_solid_box(nav, "AnxS1", Vector3(16.75, h / 2, 9.2), Vector3(11.5, h, 0.4), WALL)
 	_solid_box(nav, "AnxS2", Vector3(30.85, h / 2, 9.2), Vector3(10.7, h, 0.4), WALL)
 	_solid_box(nav, "AnxLintelS", Vector3(24.0, 3.35, 9.2), Vector3(3.0, 1.3, 0.4), WALL)
-	_solid_box(nav, "AnxE", Vector3(36.0, h / 2, 0.0), Vector3(0.4, h, 19.2), WALL)
+	# the annex's east wall has a gate doorway too (z in [-1.5, 1.5]) into the hall
+	_solid_box(nav, "AnxE1", Vector3(36.0, h / 2, -5.55), Vector3(0.4, h, 8.1), WALL)
+	_solid_box(nav, "AnxE2", Vector3(36.0, h / 2, 5.55), Vector3(0.4, h, 8.1), WALL)
+	_solid_box(nav, "AnxLintelE", Vector3(36.0, 3.35, 0.0), Vector3(0.4, 1.3, 3.0), WALL)
+
+	# the hall (interior x in [36.2, 60.4], z in [-9, 9]): two more windows on the north and south walls at x=48
+	_solid_box(nav, "HallN1", Vector3(41.35, h / 2, -9.2), Vector3(10.3, h, 0.4), WALL)
+	_solid_box(nav, "HallN2", Vector3(54.95, h / 2, -9.2), Vector3(10.9, h, 0.4), WALL)
+	_solid_box(nav, "HallLintelN", Vector3(48.0, 3.35, -9.2), Vector3(3.0, 1.3, 0.4), WALL)
+	_solid_box(nav, "HallS1", Vector3(41.35, h / 2, 9.2), Vector3(10.3, h, 0.4), WALL)
+	_solid_box(nav, "HallS2", Vector3(54.95, h / 2, 9.2), Vector3(10.9, h, 0.4), WALL)
+	_solid_box(nav, "HallLintelS", Vector3(48.0, 3.35, 9.2), Vector3(3.0, 1.3, 0.4), WALL)
+	_solid_box(nav, "HallE", Vector3(60.6, h / 2, 0.0), Vector3(0.4, h, 19.2), WALL)
 
 	# furniture (everything raised is >= 1.05 m so players cannot hop on top and break the navmesh/AI)
 	_solid_box(nav, "BarCounter", Vector3(-5.5, 0.55, -4.6), Vector3(8.0, 1.1, 0.9), Color(0.45, 0.14, 0.1))
@@ -408,9 +420,25 @@ func _build_saloon() -> void:
 	_solid_cyl(nav, "AnxTable2", Vector3(27.5, 0.525, -6.2), 0.8, 1.05, WOOD)
 	_solid_cyl(nav, "AnxTable3", Vector3(19.0, 0.525, -0.5), 0.8, 1.05, WOOD)
 	_solid_box(nav, "Safe", Vector3(33.0, 0.6, 0.0), Vector3(1.4, 1.2, 2.2), Color(0.2, 0.22, 0.25))
-	# mystery box chest and medkit cabinet against the east wall
-	_solid_box(nav, "ChestSolid", Vector3(35.2, 0.5, -5.0), Vector3(0.8, 1.0, 1.5), Color(0.35, 0.22, 0.1))
-	_solid_box(nav, "MedkitCabinet", Vector3(35.5, 0.7, 5.0), Vector3(0.6, 1.4, 1.2), Color(0.85, 0.85, 0.8))
+	# medkit cabinet against the annex's east wall (the hall's levers sit on the same wall)
+	_solid_box(nav, "MedkitCabinet", Vector3(35.5, 0.7, 6.6), Vector3(0.6, 1.4, 1.2), Color(0.85, 0.85, 0.8))
+
+	# hall furniture: crates, a wagon, counters and pillars to fight around (>= 1.05 m high, gaps >= 1.5 m)
+	_solid_box(nav, "HallCrateA", Vector3(41.0, 0.55, -6.0), Vector3(1.1, 1.1, 1.1), Color(0.55, 0.42, 0.25))
+	_solid_box(nav, "HallCrateB", Vector3(42.2, 0.55, -6.4), Vector3(1.1, 1.1, 1.1), Color(0.5, 0.38, 0.22))
+	_solid_box(nav, "HallCrateC", Vector3(41.5, 0.55, 6.0), Vector3(1.1, 1.1, 1.1), Color(0.5, 0.38, 0.22))
+	_solid_box(nav, "HallCrateD", Vector3(42.7, 0.55, 6.5), Vector3(1.1, 1.1, 1.1), Color(0.55, 0.42, 0.25))
+	_solid_box(nav, "Wagon2", Vector3(46.0, 0.65, 4.6), Vector3(4.0, 1.3, 1.5), Color(0.4, 0.28, 0.16))
+	_solid_box(nav, "Counter3", Vector3(51.0, 0.55, -5.2), Vector3(5.0, 1.1, 0.9), Color(0.45, 0.14, 0.1))
+	_solid_box(nav, "HallPillarA", Vector3(48.0, 2.0, 0.0), Vector3(0.6, 4.0, 0.6), DARK_WOOD)
+	_solid_box(nav, "HallPillarB", Vector3(54.0, 2.0, -3.5), Vector3(0.6, 4.0, 0.6), DARK_WOOD)
+	_solid_box(nav, "HallPillarC", Vector3(54.0, 2.0, 3.5), Vector3(0.6, 4.0, 0.6), DARK_WOOD)
+	_solid_cyl(nav, "HallTable1", Vector3(52.0, 0.525, 6.2), 0.8, 1.05, WOOD)
+	_solid_cyl(nav, "HallTable2", Vector3(44.5, 0.525, -2.8), 0.8, 1.05, WOOD)
+	_solid_cyl(nav, "HallTable3", Vector3(57.0, 0.525, 2.0), 0.8, 1.05, WOOD)
+	_solid_box(nav, "Vault", Vector3(57.5, 0.6, 7.0), Vector3(2.2, 1.2, 1.4), Color(0.2, 0.22, 0.25))
+	# the mystery box chest against the hall's east wall
+	_solid_box(nav, "ChestSolid", Vector3(59.8, 0.5, -5.0), Vector3(0.8, 1.0, 1.5), Color(0.35, 0.22, 0.1))
 
 	# junk on the ground that zombies trip over (not solid: players and bullets ignore it, zombie.gd checks the group)
 	var trips := Node3D.new()
@@ -421,6 +449,8 @@ func _build_saloon() -> void:
 		[Vector3(6.0, 0, -12.5), 2], [Vector3(-6.0, 0, 14.0), 1], [Vector3(8.0, 0, 12.5), 0], [Vector3(-12.5, 0, -4.0), 2],
 		[Vector3(17.5, 0, 0.5), 1], [Vector3(22.0, 0, -2.2), 0], [Vector3(26.0, 0, 2.2), 2], [Vector3(31.0, 0, -6.5), 1],
 		[Vector3(20.0, 0, 7.5), 0], [Vector3(29.0, 0, 6.5), 2], [Vector3(24.0, 0, -12.0), 2], [Vector3(24.0, 0, 13.0), 0],
+		[Vector3(40.0, 0, 0.5), 1], [Vector3(46.0, 0, -1.5), 0], [Vector3(52.0, 0, 0.5), 2], [Vector3(57.0, 0, -1.0), 1],
+		[Vector3(48.0, 0, -12.0), 2], [Vector3(48.0, 0, 13.0), 0],
 	]
 	for i in trip_defs.size():
 		var spot := Marker3D.new()
@@ -445,6 +475,8 @@ func _build_saloon() -> void:
 	_mesh_box(decor, "Roof", Vector3(0, 4.15, 0), Vector3(23.4, 0.3, 17.4), DARK_WOOD)
 	_mesh_box(decor, "AnnexFloor", Vector3(23.6, 0.015, 0), Vector3(24.4, 0.03, 18.4), Color(0.36, 0.25, 0.15))
 	_mesh_box(decor, "AnnexRoof", Vector3(23.6, 4.15, 0), Vector3(25.6, 0.3, 19.6), DARK_WOOD)
+	_mesh_box(decor, "HallFloor", Vector3(48.4, 0.015, 0), Vector3(24.4, 0.03, 18.4), Color(0.3, 0.24, 0.2))
+	_mesh_box(decor, "HallRoof", Vector3(48.6, 4.15, 0), Vector3(25.2, 0.3, 19.6), DARK_WOOD)
 	var gate_sign := Label3D.new()
 	gate_sign.text = "EAST ANNEX\nPULL BOTH LEVERS"
 	gate_sign.font_size = 56
@@ -454,6 +486,16 @@ func _build_saloon() -> void:
 	_add(decor, gate_sign, "GateSign")
 	gate_sign.position = Vector3(10.85, 3.35, 0)
 	gate_sign.rotation_degrees = Vector3(0, -90, 0)
+	var hall_sign := Label3D.new()
+	hall_sign.text = "THE HALL
+PULL BOTH LEVERS ($500 each)"
+	hall_sign.font_size = 56
+	hall_sign.pixel_size = 0.008
+	hall_sign.outline_size = 12
+	hall_sign.modulate = Color(0.96, 0.73, 0.26)
+	_add(decor, hall_sign, "HallSign")
+	hall_sign.position = Vector3(35.65, 3.35, 0)
+	hall_sign.rotation_degrees = Vector3(0, -90, 0)
 	var sign_label := Label3D.new()
 	sign_label.text = "SALOON"
 	sign_label.font_size = 96
@@ -492,7 +534,8 @@ func _build_saloon() -> void:
 	var lights := Node3D.new()
 	_add(root, lights, "Lamps")
 	var lamp_pos := [Vector3(-6, 3.4, -2), Vector3(6, 3.4, -2), Vector3(-6, 3.4, 5), Vector3(6, 3.4, 5), Vector3(0, 3.4, 1),
-		Vector3(17, 3.4, -3.5), Vector3(17, 3.4, 3.5), Vector3(29, 3.4, -3.5), Vector3(29, 3.4, 3.5), Vector3(23.6, 3.4, 0)]
+		Vector3(17, 3.4, -3.5), Vector3(17, 3.4, 3.5), Vector3(29, 3.4, -3.5), Vector3(29, 3.4, 3.5), Vector3(23.6, 3.4, 0),
+		Vector3(42, 3.4, -3.5), Vector3(42, 3.4, 3.5), Vector3(54, 3.4, -3.5), Vector3(54, 3.4, 3.5), Vector3(48.4, 3.4, 0)]
 	for i in lamp_pos.size():
 		var l := OmniLight3D.new()
 		l.light_color = Color(1.0, 0.78, 0.5)
@@ -507,13 +550,15 @@ func _build_saloon() -> void:
 	var bar_scene: PackedScene = load("res://scenes/world/barricade.tscn")
 	# index order matters: it is the entrance number (EnemySpawns/E<i> sits outside window i)
 	var bar_defs := [
-		["Front", Vector3(0, 0, 8.2), 0.0, false],
-		["Side", Vector3(-11.2, 0, 0.0), -90.0, false],
-		["Back", Vector3(6.0, 0, -8.2), 180.0, false],
-		["West2", Vector3(-11.2, 0, -5.5), -90.0, false],
-		["South2", Vector3(-7.0, 0, 8.2), 0.0, false],
-		["AnnexN", Vector3(24.0, 0, -9.2), 180.0, true],
-		["AnnexS", Vector3(24.0, 0, 9.2), 0.0, true],
+		["Front", Vector3(0, 0, 8.2), 0.0, 0],
+		["Side", Vector3(-11.2, 0, 0.0), -90.0, 0],
+		["Back", Vector3(6.0, 0, -8.2), 180.0, 0],
+		["West2", Vector3(-11.2, 0, -5.5), -90.0, 0],
+		["South2", Vector3(-7.0, 0, 8.2), 0.0, 0],
+		["AnnexN", Vector3(24.0, 0, -9.2), 180.0, 1],
+		["AnnexS", Vector3(24.0, 0, 9.2), 0.0, 1],
+		["HallN", Vector3(48.0, 0, -9.2), 180.0, 2],
+		["HallS", Vector3(48.0, 0, 9.2), 0.0, 2],
 	]
 	for i in bar_defs.size():
 		var b: Node3D = bar_scene.instantiate()
@@ -521,13 +566,13 @@ func _build_saloon() -> void:
 		bars.add_child(b)
 		b.owner = root
 		b.set("index", i)
-		b.set("annex", bar_defs[i][3])
+		b.set("stage", bar_defs[i][3])
 		b.position = bar_defs[i][1]
 		b.rotation_degrees = Vector3(0, bar_defs[i][2], 0)
 	var barrels := Node3D.new()
 	_add(root, barrels, "Barrels")
 	var barrel_scene: PackedScene = load("res://scenes/world/explosive_barrel.tscn")
-	var barrel_pos := [Vector3(-8.0, 0, 3.2), Vector3(3.5, 0, 6.5), Vector3(14.8, 0, -7.0), Vector3(33.0, 0, 7.0)]
+	var barrel_pos := [Vector3(-8.0, 0, 3.2), Vector3(3.5, 0, 6.5), Vector3(14.8, 0, -7.0), Vector3(33.0, 0, 7.0), Vector3(50.5, 0, 7.0)]
 	for i in barrel_pos.size():
 		var b: Node3D = barrel_scene.instantiate()
 		b.name = "Barrel%d" % i
@@ -549,33 +594,58 @@ func _build_saloon() -> void:
 	_marker(es, "E4", Vector3(-7, 0, 18))
 	_marker(es, "E5", Vector3(24, 0, -19))
 	_marker(es, "E6", Vector3(24, 0, 19))
+	_marker(es, "E7", Vector3(48, 0, -19))
+	_marker(es, "E8", Vector3(48, 0, 19))
 	_build_annex(root)
 	_save(root, "res://scenes/world/saloon.tscn")
 
 
 ## The gate + levers + shops. Not under Nav: the gate must not be baked into the navmesh as a wall.
 func _build_annex(root: Node3D) -> void:
-	var annex := Node3D.new()
-	annex.set_script(_script("res://scripts/world/annex.gd"))
-	_add(root, annex, "Annex")
-	var gate := _solid_box(annex, "Gate", Vector3(11.2, 1.4, 0.0), Vector3(0.3, 2.8, 3.2), Color(0.25, 0.25, 0.3))
-	for y in [-0.9, 0.0, 0.9]: # iron straps
-		_mesh_box(gate, "Strap%d" % int(y * 10), Vector3(0, y, 0), Vector3(0.36, 0.14, 3.0), Color(0.12, 0.12, 0.14))
-	_sync(annex, "Sync", ["lever1", "lever2", "latch_left", "door_t", "is_open"], 0.1)
+	# two gated rooms: the east annex (stage 1, gate in the saloon's east wall) and the hall behind it (stage 2)
+	for def in [["Annex", 1, 11.2], ["Annex2", 2, 36.0]]:
+		var annex := Node3D.new()
+		annex.set_script(_script("res://scripts/world/annex.gd"))
+		annex.set("stage", def[1])
+		_add(root, annex, def[0])
+		var gate := _solid_box(annex, "Gate", Vector3(def[2], 1.4, 0.0), Vector3(0.3, 2.8, 3.2), Color(0.25, 0.25, 0.3))
+		for y in [-0.9, 0.0, 0.9]: # iron straps
+			_mesh_box(gate, "Strap%d" % int(y * 10), Vector3(0, y, 0), Vector3(0.36, 0.14, 3.0), Color(0.12, 0.12, 0.14))
+		_sync(annex, "Sync", ["lever1", "lever2", "latch_left", "door_t", "is_open"], 0.1)
 
 	var its := Node3D.new()
 	_add(root, its, "Interactables")
-	# levers on the saloon's east wall (faces west: local +Z points into the room)
+	# levers on the east walls (they face west: local +Z points into the room): the saloon's, then the annex's
 	_interactable(its, "Lever1", 0, Vector3(10.93, 0, -4.8), -90.0, 0)
 	_interactable(its, "Lever2", 1, Vector3(10.93, 0, 3.8), -90.0, 1)
-	_interactable(its, "MysteryBox", 2, Vector3(34.55, 0, -5.0), -90.0, 0)
+	_interactable(its, "MysteryBox", 2, Vector3(59.15, 0, -5.0), -90.0, 0) # in the hall
 	_interactable(its, "Bandages", 3, Vector3(-10.2, 0, 6.4), 90.0, 0)
-	_interactable(its, "Medkit", 4, Vector3(34.9, 0, 5.0), -90.0, 0)
+	_interactable(its, "Medkit", 4, Vector3(34.9, 0, 6.6), -90.0, 0)
+	_interactable(its, "HallLever1", 5, Vector3(35.73, 0, -6.8), -90.0, 0)
+	_interactable(its, "HallLever2", 6, Vector3(35.73, 0, 3.4), -90.0, 1)
+
+	# wall vents the crawlers climb out of: local +Z points into the room; meta "stage" says which room must be open
+	var vents := Node3D.new()
+	_add(root, vents, "Vents")
+	var vent_defs := [
+		[Vector3(-10.95, 1.2, 3.0), 90.0, 0], [Vector3(1.5, 1.2, -7.95), 0.0, 0], [Vector3(4.0, 1.2, 7.95), 180.0, 0],
+		[Vector3(17.0, 1.2, 8.95), 180.0, 1], [Vector3(29.0, 1.2, -8.95), 0.0, 1],
+		[Vector3(42.0, 1.2, -8.95), 0.0, 2], [Vector3(55.0, 1.2, 8.95), 180.0, 2], [Vector3(60.35, 1.2, 1.0), -90.0, 2],
+	]
+	for i in vent_defs.size():
+		var m := Marker3D.new()
+		_add(vents, m, "Vent%d" % i)
+		m.position = vent_defs[i][0]
+		m.rotation_degrees = Vector3(0, vent_defs[i][1], 0)
+		m.set_meta("stage", vent_defs[i][2])
+		_mesh_box(m, "Grate", Vector3(0, 0, -0.03), Vector3(1.0, 0.7, 0.08), Color(0.08, 0.08, 0.1))
+		for j in 3:
+			_mesh_box(m, "Slat%d" % j, Vector3(0, -0.2 + j * 0.2, 0.02), Vector3(0.9, 0.04, 0.05), Color(0.25, 0.25, 0.3))
 
 
 ## kind: 0 lever, 1 mystery box, 2/3 shops are numbered by `id` here: 0,1 levers, 2 box, 3 bandages, 4 medkit.
 func _interactable(parent: Node, nm: String, id: int, pos: Vector3, yaw_deg: float, slot: int) -> void:
-	var kind_for := [0, 0, 1, 2, 3]
+	var kind_for := [0, 0, 1, 2, 3, 0, 0]
 	var n := Node3D.new()
 	n.set_script(_script("res://scripts/world/interactable.gd"))
 	_add(parent, n, nm)
@@ -584,9 +654,10 @@ func _interactable(parent: Node, nm: String, id: int, pos: Vector3, yaw_deg: flo
 	n.set("kind", kind_for[id])
 	n.set("index", id)
 	n.set("slot", slot)
+	n.set("stage", 2 if id >= 5 else 1)
 	var title := ""
 	match id:
-		0, 1: # wall plate with a handle that swings down when pulled (animated in interactable.gd)
+		0, 1, 5, 6: # wall plate with a handle that swings down when pulled (animated in interactable.gd)
 			_mesh_box(n, "Plate", Vector3(0, 1.2, -0.03), Vector3(0.55, 1.0, 0.1), Color(0.2, 0.2, 0.24))
 			_mesh_box(n, "Slot", Vector3(0, 1.2, 0.03), Vector3(0.1, 0.8, 0.04), Color(0.05, 0.05, 0.06))
 			var pivot := Node3D.new()
@@ -601,7 +672,7 @@ func _interactable(parent: Node, nm: String, id: int, pos: Vector3, yaw_deg: flo
 			ball.material_override = _mat(Color(0.85, 0.12, 0.1))
 			_add(pivot, ball, "Knob")
 			ball.position = Vector3(0, 0.68, 0)
-			title = "LEVER $250"
+			title = "LEVER $250" if id < 5 else "HALL LEVER $500"
 		2: # chest: body + hinged lid + a label that shows what you got
 			_mesh_box(n, "Body", Vector3(0, 0.3, -0.6), Vector3(1.4, 0.6, 0.7), Color(0.4, 0.26, 0.12))
 			_mesh_box(n, "Band", Vector3(0, 0.3, -0.24), Vector3(1.42, 0.62, 0.04), Color(0.95, 0.8, 0.15))
@@ -634,7 +705,8 @@ func _interactable(parent: Node, nm: String, id: int, pos: Vector3, yaw_deg: flo
 	tag.modulate = Color(0.96, 0.73, 0.26)
 	tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	_add(n, tag, "Tag")
-	tag.position = Vector3(0, 2.15 if id <= 1 else 1.7, -0.2 if id > 1 else 0.1)
+	var lever_like := id <= 1 or id >= 5
+	tag.position = Vector3(0, 2.15 if lever_like else 1.7, 0.1 if lever_like else -0.2)
 
 
 # --- main --------------------------------------------------------------------------------------------------------
@@ -662,7 +734,7 @@ func _build_main() -> void:
 	var wm := Node.new()
 	wm.set_script(_script("res://scripts/world/wave_manager.gd"))
 	_add(world, wm, "WaveManager")
-	_sync(wm, "Sync", ["state", "wave", "enemies_alive", "to_spawn", "break_left", "cash"], 0.2)
+	_sync(wm, "Sync", ["state", "wave", "enemies_alive", "to_spawn", "break_left", "cash", "ready_ids"], 0.2)
 	var cam := Camera3D.new()
 	cam.fov = 70.0
 	cam.far = 200.0

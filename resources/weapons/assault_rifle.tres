@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="WeaponData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/weapons/weapon_data.gd" id="1_wd"]
+
+[resource]
+script = ExtResource("1_wd")
+id = &"assault_rifle"
+display_name = "Assault Rifle"
+damage = 17.0
+pellets = 1
+spread_deg = 1.5
+fire_interval = 0.095
+mag_size = 30
+reload_time = 2.1
+max_range = 80.0
+falloff_start = 22.0
+falloff_end = 60.0
+min_damage_frac = 0.5
+enemy_knockback = 0.9
+enemy_stagger = 0.1
+player_knockback = 1.0
+player_stagger = 0.0
+recoil_deg = 1.1
+switch_time = 0.45
+auto = true

@@ -14,6 +14,10 @@ var lobby: LobbyScreen
 var hud: Hud
 var pause: PauseMenu
 var end: EndScreen
+var cards: CardScreen
+var _cards_hidden := false
+var _cards_delay := 0.0 ## seconds before freshly dealt cards open (so nobody picks one with a stray click)
+const CARDS_DELAY := 2.5
 
 var _pause_open := false
 var _end_timer := 0.0
@@ -31,7 +35,8 @@ var _orbit := 0.0
 
 
 func _ready() -> void:
-	for pair in [["weapon_3", KEY_3], ["weapon_4", KEY_4], ["weapon_5", KEY_5], ["weapon_6", KEY_6]]: # registered here so project.godot does not need to change
+	for pair in [["weapon_3", KEY_3], ["weapon_4", KEY_4], ["weapon_5", KEY_5], ["weapon_6", KEY_6], ["weapon_7", KEY_7], ["weapon_8", KEY_8], ["weapon_9", KEY_9],
+			["ready", KEY_ENTER], ["cards", KEY_TAB]]: # registered here so project.godot does not need to change
 		if not InputMap.has_action(pair[0]):
 			InputMap.add_action(pair[0])
 			var ev := InputEventKey.new()
@@ -92,6 +97,13 @@ func _build_ui() -> void:
 	end.name = "End"
 	end.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	root.add_child(end)
+	cards = CardScreen.new()
+	cards.name = "Cards"
+	cards.visible = false
+	root.add_child(cards)
+	cards.pick_requested.connect(wave_manager.request_pick)
+	cards.ready_requested.connect(wave_manager.press_ready)
+	wave_manager.offers_changed.connect(_on_offers_changed)
 	menu.host_requested.connect(_on_host_requested)
 	menu.join_requested.connect(_on_join_requested)
 	menu.solo_requested.connect(_on_solo_requested)
@@ -145,13 +157,25 @@ func _on_phase_changed(phase: int) -> void:
 	if phase != Net.Phase.PLAYING:
 		_pause_open = false
 		_end_shown = false
+	if phase != Net.Phase.PLAYING:
+		for p in players_node.get_children():
+			if p is Player:
+				p.stop_net_sync()
 	if phase == Net.Phase.MENU:
 		_free_children(players_node)
 		_free_children(enemies_node)
 	elif phase == Net.Phase.LOBBY and Net.is_host():
-		_free_children(players_node) # host frees -> spawner despawns on every client
-		_free_children(enemies_node)
+		_free_players_soon()
 	_refresh_ui()
+
+
+## Back in the lobby: give the clients a moment to hear about it (and stop streaming positions) before the host frees
+## the players, which makes the spawner despawn them everywhere.
+func _free_players_soon() -> void:
+	_free_children(enemies_node)
+	await get_tree().create_timer(0.35).timeout
+	if Net.phase == Net.Phase.LOBBY: # not already started again
+		_free_children(players_node)
 
 
 func _on_game_started() -> void:
@@ -210,6 +234,16 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("pause") and Net.phase == Net.Phase.PLAYING:
 		_set_paused(not _pause_open)
 		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("ready") and Net.phase == Net.Phase.PLAYING and not _pause_open and wave_manager.state == WaveManager.State.BREAK \
+			and Net.local_player != null:
+		wave_manager.press_ready(not wave_manager.is_ready(Net.local_player.peer_id))
+		Sfx.play(&"ready", -4.0)
+		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("cards") and Net.phase == Net.Phase.PLAYING and not _pause_open and not wave_manager.my_offers.is_empty():
+		_cards_delay = 0.0
+		_cards_hidden = not _cards_hidden # Tab: put the cards away to walk around, bring them back to choose
+		_refresh_ui()
+		get_viewport().set_input_as_handled()
 	elif event is InputEventMouseButton and event.pressed and Net.phase == Net.Phase.PLAYING and not Net.ui_blocking \
 			and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and DisplayServer.get_name() != "headless":
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED # capture was lost (alt-tab): a click takes it back
@@ -227,7 +261,8 @@ func _refresh_ui() -> void:
 	hud.visible = playing and not _pause_open
 	pause.visible = playing and _pause_open
 	end.visible = playing and _end_shown and not _pause_open
-	Net.ui_blocking = not playing or _pause_open or end.visible
+	cards.visible = _cards_wanted()
+	Net.ui_blocking = not playing or _pause_open or end.visible or cards.visible
 	if DisplayServer.get_name() != "headless":
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if Net.ui_blocking else Input.MOUSE_MODE_CAPTURED
 
@@ -240,6 +275,7 @@ func _process(delta: float) -> void:
 		menu_cam.look_at(Vector3(0, 1.5, 4.0))
 		if not menu_cam.current:
 			menu_cam.make_current()
+	_update_cards()
 	# end-of-run screen
 	if Net.phase == Net.Phase.PLAYING:
 		var over := wave_manager.state == WaveManager.State.VICTORY or wave_manager.state == WaveManager.State.GAME_OVER
@@ -247,10 +283,39 @@ func _process(delta: float) -> void:
 			_end_timer += delta
 			if _end_timer >= END_SCREEN_DELAY:
 				_end_shown = true
-				end.show_result(wave_manager.state == WaveManager.State.VICTORY, wave_manager.wave, wave_manager.total_waves)
+				end.show_result(wave_manager.state == WaveManager.State.VICTORY, wave_manager.wave)
 				_refresh_ui()
 		elif not over:
 			_end_timer = 0.0
 			if _end_shown:
 				_end_shown = false
 				_refresh_ui()
+
+
+# --- reward cards + ready ---------------------------------------------------------------------------------
+
+func _cards_wanted() -> bool:
+	return Net.phase == Net.Phase.PLAYING and not _pause_open and not end.visible and not _cards_hidden and _cards_delay <= 0.0 \
+			and wave_manager.state == WaveManager.State.BREAK and not wave_manager.my_offers.is_empty()
+
+
+func _on_offers_changed() -> void:
+	_cards_hidden = false
+	_cards_delay = CARDS_DELAY if not wave_manager.my_offers.is_empty() else 0.0 # let the kill-clicking stop first
+	if not wave_manager.my_offers.is_empty() and Net.local_player != null:
+		cards.show_offers(wave_manager.my_offers, Net.local_player.weapons)
+		Sfx.play(&"card", -4.0)
+	_refresh_ui()
+
+
+func _update_cards() -> void:
+	_cards_delay = maxf(_cards_delay - get_process_delta_time(), 0.0)
+	if cards.visible != _cards_wanted():
+		_refresh_ui()
+	if not cards.visible or Net.local_player == null:
+		return
+	var waiting: Array = []
+	for p in Net.all_players():
+		if not wave_manager.is_ready(p.peer_id):
+			waiting.append(p.player_name)
+	cards.refresh([], waiting, wave_manager.is_ready(Net.local_player.peer_id))

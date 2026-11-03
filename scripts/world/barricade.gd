@@ -6,7 +6,7 @@ extends Node3D
 const MAX_BOARDS := 5
 
 @export var index := 0
-@export var annex := false ## an annex window: zombies only come through it once the annex is open
+@export var stage := 0 ## 0 = saloon window; 1 = annex window, 2 = hall window: zombies only come through once that room is open
 
 var boards: int = MAX_BOARDS:
 	set = _set_boards
@@ -47,9 +47,9 @@ func is_inside(pos: Vector3) -> bool:
 
 ## Whether zombies may spawn for this entrance right now.
 func is_active() -> bool:
-	if not annex:
+	if stage == 0:
 		return true
-	var a := get_tree().get_first_node_in_group("annex") as Annex
+	var a := Annex.find_stage(get_tree(), stage)
 	return a != null and a.is_open
 
 

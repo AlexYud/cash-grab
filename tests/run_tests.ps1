@@ -22,8 +22,10 @@
     m6   carry + throw, Yank/Disco guns, leaper, bloater
     m7   shared cash, headshots, ADS, invisible walls, shops, two-lever annex door, mystery box, Tesla/Boing, stumble
     m8   rigged zombies: feet planted, poses per state, ragdoll on trip / blast / death, tether, get-up, domino, corpses
+    m9   ready button, reward cards, buff effects, endless waves, armor / second wind, team bars, spectator view
+    m10  assault rifle / sniper / melee weapons and the ceiling crawler
     nav  navmesh reaches every window and shop spot (single process)
-    soak2 / soak4  whole five-wave runs with 2 / 4 scripted players at 3x speed (god mode, so bots always finish)
+    soak2 / soak4  eight-wave runs with 2 / 4 scripted players at 3x speed (god mode, so bots always finish)
 #>
 param(
 	[string]$Test = "m0",
@@ -47,6 +49,8 @@ $Tests = [ordered]@{
 	"m6"  = @{ Host = "m6_host"; Clients = @("m6_client"); Limit = 180; Extra = @("--hold-waves") }
 	"m7"  = @{ Host = "m7_host"; Clients = @("m7_client"); Limit = 240; Extra = @("--hold-waves"); Plain = $true }
 	"m8"  = @{ Host = "m8_host"; Clients = @("m8_client"); Limit = 120; Extra = @("--hold-waves") }
+	"m9"  = @{ Host = "m9_host"; Clients = @("m9_client"); Limit = 240; Plain = $true } # no --hold-waves: it tests the real ready/wave flow
+	"m10" = @{ Host = "m10_host"; Clients = @("m10_client"); Limit = 200; Extra = @("--hold-waves"); Plain = $true }
 	"nav" = @{ Host = "nav_check"; Clients = @(); Limit = 40; Extra = @("--hold-waves") }
 	"m4d" = @{ Host = "m4d_host"; Clients = @("m4d_client"); Limit = 90; Extra = @("--hold-waves") }
 	"m4c" = @{ Host = "m4c_host"; Clients = @("m4c_filler", "m4c_filler", "m4c_filler", @{ Bot = ""; Delay = 8; Args = @("--expect-join-fail") }); Autostart = 4; Limit = 120; Extra = @("--hold-waves") }

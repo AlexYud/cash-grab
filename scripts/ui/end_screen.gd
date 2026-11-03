@@ -37,11 +37,11 @@ func _ready() -> void:
 	box.add_child(leave)
 
 
-func show_result(victory: bool, wave: int, total: int) -> void:
+func show_result(victory: bool, wave: int) -> void:
 	_title.text = "VICTORY" if victory else "GAME OVER"
 	_title.add_theme_color_override("font_color", UiKit.GOOD if victory else UiKit.BAD)
 	var lines := PackedStringArray()
-	lines.append("Waves cleared: %d / %d" % [wave if victory else maxi(wave - 1, 0), total])
+	lines.append("Waves cleared: %d" % (wave if victory else maxi(wave - 1, 0)))
 	var ps := Net.all_players()
 	ps.sort_custom(func(a: Player, b: Player) -> bool: return a.kills > b.kills)
 	for p in ps:

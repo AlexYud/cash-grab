@@ -9,9 +9,9 @@ extends CharacterBody3D
 ## All of them are clumsy: they trip over junk on the ground, over fallen zombies and over each other, and spend
 ## a moment on the floor (just slowed down, not easier to hurt).
 
-enum State { IDLE, CHASE, ATTACK, BARRICADE, STAGGER, FALLEN, LATCHED, CHARGE, LEAP, DANCE }
+enum State { IDLE, CHASE, ATTACK, BARRICADE, STAGGER, FALLEN, LATCHED, CHARGE, LEAP, DANCE, CLIMB, CEILING, DROP }
 enum Swing { NONE, PLAYER, BOARD }
-enum Kind { NORMAL, BRUTE, HUGGER, LEAPER, BLOATER }
+enum Kind { NORMAL, BRUTE, HUGGER, LEAPER, BLOATER, CRAWLER }
 
 signal died(zombie: Zombie)
 
@@ -58,6 +58,14 @@ var _leap_vel := Vector3.ZERO
 var _leap_hit := false
 var _leap_cd := 2.0
 var _bowl_cd := 0.0
+var _crawl_phase := 3 ## crawlers: 0 climbing the wall, 1 walking the ceiling, 2 dropping, 3 on the ground like anyone else
+var _drop_left := 0.0
+var _bleed_left := 0.0
+var _bleed_dps := 0.0
+var _bleed_accum := 0.0
+var _bleed_src: Player = null
+var _freeze_left := 0.0
+var _freeze_mult := 1.0
 var _last_hit_head := false
 var _level: SaloonLevel = null
 
@@ -87,6 +95,9 @@ func setup(data: Dictionary) -> void:
 	rotation.y = sync_yaw
 	_attack_cd = randf_range(0.0, 0.9) # so a crowd does not swing in lockstep
 	_trip_cd = randf_range(1.0, 3.0)
+	if kind == Kind.CRAWLER:
+		_crawl_phase = 0
+		state = State.CLIMB
 
 
 func _ready() -> void:
@@ -100,6 +111,7 @@ func _ready() -> void:
 	body_shape.scale = Vector3.ONE * s
 	body_shape.position.y = 0.85 * s
 	fallen_shape.disabled = true
+	_apply_surface_shape()
 	if state == State.FALLEN: # joined while it was on the floor
 		puppet.start_ragdoll(Vector3.ZERO, self)
 		body_shape.disabled = true
@@ -130,6 +142,8 @@ static func style(k: int) -> Dictionary:
 			return {"kind": k, "shirt": Color(0.75, 0.25, 0.3), "skin": Color(0.82, 0.5, 0.42), "scale": 0.9}
 		Kind.BLOATER:
 			return {"kind": k, "shirt": Color(0.45, 0.6, 0.2), "skin": Color(0.62, 0.78, 0.35), "scale": 1.25}
+		Kind.CRAWLER:
+			return {"kind": k, "shirt": Color(0.2, 0.12, 0.3), "skin": Color(0.5, 0.52, 0.66), "scale": 0.85}
 	return {"kind": k, "shirt": Color.WHITE, "skin": Color(0, 0, 0, 0), "scale": 1.0}
 
 
@@ -167,11 +181,27 @@ func _set_state(v: int) -> void:
 	var down := v == State.FALLEN
 	body_shape.set_deferred("disabled", down)
 	fallen_shape.set_deferred("disabled", not down)
+	_apply_surface_shape()
 	if down and was != State.FALLEN: # no more control: the skeleton goes limp
 		puppet.start_ragdoll(_ragdoll_velocity(), self)
 		Sfx.play_at(&"hit_world", global_position + Vector3.UP * 0.3, -2.0, randf_range(0.45, 0.6))
 	elif was == State.FALLEN and not down:
 		puppet.end_ragdoll()
+
+
+## A crawler on the wall or hanging from the ceiling has its hit shape where its body really is.
+func _apply_surface_shape() -> void:
+	var s := puppet.scale.x
+	match state:
+		State.CLIMB: # lying along the wall, feet at the bottom
+			body_shape.rotation.x = PI / 2.0
+			body_shape.position = Vector3(0.0, 0.0, 0.85 * s)
+		State.CEILING: # hanging by its feet
+			body_shape.rotation.x = 0.0
+			body_shape.position = Vector3(0.0, -0.85 * s, 0.0)
+		_:
+			body_shape.rotation.x = 0.0
+			body_shape.position = Vector3(0.0, 0.85 * s, 0.0)
 
 
 ## How fast the body was going when it went limp: exact on the host, estimated from the replicated motion elsewhere.
@@ -193,6 +223,12 @@ func _physics_process(delta: float) -> void:
 	_charge_cd = maxf(_charge_cd - delta, 0.0)
 	_leap_cd = maxf(_leap_cd - delta, 0.0)
 	_bowl_cd = maxf(_bowl_cd - delta, 0.0)
+	_tick_status(delta)
+	if _dead:
+		return
+	if _crawl_phase < 3:
+		_tick_crawl(delta)
+		return
 	if _latched != null:
 		_tick_latched(delta)
 		return
@@ -242,6 +278,8 @@ func _physics_process(delta: float) -> void:
 	if desired.length() > 0.01:
 		desired += _separation(delta)
 	_knock = _knock.move_toward(Vector3.ZERO, 12.0 * delta)
+	if _freeze_left > 0.0:
+		desired *= _freeze_mult
 	velocity.x = desired.x + _knock.x
 	velocity.z = desired.z + _knock.z
 	if is_on_floor():
@@ -257,6 +295,109 @@ func _physics_process(delta: float) -> void:
 	sync_pos = global_position
 	sync_yaw = rotation.y
 	sync_speed = Vector2(desired.x, desired.z).length()
+
+
+## Bleeding and freezing from the card buffs.
+func _tick_status(delta: float) -> void:
+	if _freeze_left > 0.0:
+		_freeze_left -= delta
+	if _bleed_left > 0.0:
+		_bleed_left -= delta
+		_bleed_accum += _bleed_dps * delta
+		if _bleed_accum >= 1.0:
+			var tick := int(_bleed_accum)
+			_bleed_accum -= tick
+			var src := _bleed_src if is_instance_valid(_bleed_src) else null
+			hp -= tick # not srv_hit: bleeding does not flinch or push
+			if hp <= 0:
+				_die(src)
+
+
+func srv_bleed(dps: float, seconds: float, source: Player) -> void:
+	if _dead:
+		return
+	_bleed_dps = maxf(_bleed_dps if _bleed_left > 0.0 else 0.0, dps)
+	_bleed_left = seconds
+	_bleed_src = source
+	fx_status.rpc(0, seconds)
+
+
+## mult: speed multiplier while frozen (0.5 = half speed).
+func srv_freeze(mult: float, seconds: float) -> void:
+	if _dead or kind == Kind.BRUTE and mult < 0.5:
+		mult = 0.5 # the brute only half-listens to the cold
+	_freeze_mult = clampf(mult, 0.2, 1.0)
+	_freeze_left = seconds
+	fx_status.rpc(1, seconds)
+
+
+# --- crawler: wall -> ceiling -> drop on someone ------------------------------------------------------------
+
+## Phase 0 climbs the wall to the ceiling, phase 1 walks the ceiling upside down towards the nearest player, phase 2
+## is the drop. After landing it is a normal (fast, low) zombie.
+func _tick_crawl(delta: float) -> void:
+	_retarget -= delta
+	if _retarget <= 0.0:
+		_retarget = 0.4
+		_target = _pick_target()
+	match _crawl_phase:
+		0:
+			state = State.CLIMB
+			sync_speed = GameConfig.CRAWLER_CLIMB_SPEED
+			global_position.y += GameConfig.CRAWLER_CLIMB_SPEED * delta
+			if global_position.y >= GameConfig.CEILING_Y:
+				global_position.y = GameConfig.CEILING_Y
+				_crawl_phase = 1
+		1:
+			state = State.CEILING
+			global_position.y = GameConfig.CEILING_Y
+			var dir := Vector3.ZERO
+			if _target != null and is_instance_valid(_target):
+				var to := _target.global_position - global_position
+				to.y = 0.0
+				if to.length() <= GameConfig.CRAWLER_DROP_RANGE:
+					_begin_drop(to)
+					return
+				dir = to.normalized()
+			sync_speed = move_speed if dir != Vector3.ZERO else 0.0
+			if dir != Vector3.ZERO:
+				var step := dir * move_speed * (_freeze_mult if _freeze_left > 0.0 else 1.0) * delta
+				global_position += step
+				rotation.y = lerp_angle(rotation.y, _yaw_to(dir), 1.0 - exp(-10.0 * delta)) # upside down is only the rig's roll: the body still faces where it walks
+		2:
+			state = State.DROP
+			_drop_left -= delta
+			velocity.y -= GameConfig.GRAVITY * delta
+			move_and_slide()
+			sync_speed = 0.0
+			if is_on_floor() and _drop_left < 0.45 or _drop_left <= 0.0:
+				_land()
+	sync_pos = global_position
+	sync_yaw = rotation.y
+
+
+func _begin_drop(to: Vector3) -> void:
+	_crawl_phase = 2
+	_drop_left = 0.9
+	velocity = Vector3(to.x, 0.0, to.z).limit_length(4.0)
+	velocity.y = 0.0
+	state = State.DROP
+	fx_roar.rpc()
+
+
+func _land() -> void:
+	_crawl_phase = 3
+	state = State.CHASE
+	velocity = Vector3.ZERO
+	_attack_cd = 0.4
+	for p in Net.all_players():
+		var d := p.global_position - global_position
+		d.y = 0.0
+		if p.status == Player.Status.ALIVE and d.length() < 1.5 and absf(p.global_position.y - global_position.y) < 1.8:
+			p.srv_take_damage(damage_amount(), global_position)
+			p.srv_launch(d.normalized() * 4.0 + Vector3.UP * 2.5, 0.5)
+	srv_trip(Vector3.ZERO) # lands in a heap
+	_fall_left = 0.9
 
 
 func _think(delta: float) -> Vector3:
@@ -440,11 +581,13 @@ func damage_amount() -> int:
 			return GameConfig.LEAPER_DAMAGE
 		Kind.BLOATER:
 			return GameConfig.BLOATER_DAMAGE
+		Kind.CRAWLER:
+			return GameConfig.CRAWLER_DAMAGE
 	return GameConfig.ZOMBIE_DAMAGE
 
 
 func _begin_swing(swing_kind: int) -> void:
-	_swing = swing_kind
+	_swing = swing_kind as Swing
 	_swing_left = GameConfig.ZOMBIE_WINDUP
 	fx_attack.rpc()
 	if swing_kind == Swing.PLAYER: # wild swings sometimes whack a neighbour
@@ -615,7 +758,7 @@ func add_knock(v: Vector3) -> void:
 
 ## Falls flat for a moment (state replication does the visuals on every peer).
 func srv_trip(push: Vector3 = Vector3.ZERO) -> void:
-	if _dead or kind == Kind.BRUTE or _fall_left > 0.0 or _latched != null:
+	if _dead or kind == Kind.BRUTE or _fall_left > 0.0 or _latched != null or _crawl_phase < 3:
 		return
 	_fall_left = randf_range(GameConfig.FALL_MIN, GameConfig.FALL_MAX)
 	_swing_left = 0.0
@@ -690,6 +833,9 @@ func srv_hit(damage: int, knock: Vector3, stagger: float, source: Player, head: 
 	hp -= damage
 	_last_hit_head = head # only a headshot that lands the killing blow pays the bonus
 	var k := 0.25 if kind == Kind.BRUTE else 1.0 # the brute barely notices being pushed
+	if _crawl_phase < 3:
+		k = 0.0 # stuck to a wall or the ceiling: shots hurt but do not push or stun
+		stagger = 0.0
 	add_knock(knock * k)
 	if _knock.length() > 10.0:
 		_knock = _knock.normalized() * 10.0
@@ -781,6 +927,12 @@ func fx_attack() -> void:
 @rpc("authority", "call_local", "unreliable")
 func fx_kick(v: Vector3) -> void:
 	puppet.kick(v)
+
+
+## A colour wash on the body for a while: 0 bleeding (red), 1 frozen (blue).
+@rpc("authority", "call_local", "unreliable")
+func fx_status(what: int, seconds: float) -> void:
+	puppet.set_tint(Color(1.0, 0.45, 0.45) if what == 0 else Color(0.55, 0.8, 1.35), seconds)
 
 
 @rpc("authority", "call_local", "unreliable")
