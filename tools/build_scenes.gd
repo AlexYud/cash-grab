@@ -309,7 +309,7 @@ func _build_zombie() -> void:
 	_add(root, fs, "FallenShape")
 	fs.position = Vector3(0, 0.2, 0)
 	var vis := Node3D.new()
-	vis.set_script(_script("res://scripts/characters/puppet.gd"))
+	vis.set_script(_script("res://scripts/characters/zombie_rig.gd"))
 	_add(root, vis, "Visual")
 	_add(root, NavigationAgent3D.new(), "Agent")
 	_sync(root, "Sync", ["sync_pos", "sync_yaw", "sync_speed", "state", "hp"], 0.05)

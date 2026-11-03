@@ -8,7 +8,7 @@ enum Impact { WORLD, FLESH }
 
 var world: Node3D = null ## set by Main; parent for all spawned effects
 
-var _ragdolls: Array = [] ## of Ragdoll
+var _ragdolls: Array = [] ## of Ragdoll / ZombieRig corpses (anything with retire())
 var _debris: Array = [] ## of RigidBody3D
 var _spark_mesh: SphereMesh
 var _spark_mat: StandardMaterial3D
@@ -62,19 +62,17 @@ func _prune(list: Array) -> Array:
 	return out
 
 
-## Dead enemies are freed on the host immediately; every peer builds its own ragdoll from this event.
+## Dead enemies are freed on the host immediately; every peer builds its own corpse from this event, carrying on from
+## the zombie's pose and momentum if its node still exists here.
 @rpc("authority", "call_local", "reliable")
-func enemy_died(pos: Vector3, yaw: float, impulse: Vector3, kind: int = 0) -> void:
+func enemy_died(pos: Vector3, yaw: float, impulse: Vector3, kind: int = 0, id: int = 0) -> void:
 	if world == null:
 		return
-	var pup := Puppet.new()
-	world.add_child(pup)
-	var st := Zombie.style(kind)
-	pup.build(Puppet.Kind.ZOMBIE, st["shirt"], st["skin"])
-	pup.global_position = pos
-	pup.rotation.y = yaw
-	add_ragdoll(pup.get_ragdoll_parts(), impulse)
-	pup.queue_free()
+	var src := Zombie.find_by_id(get_tree(), id) if id != 0 else null
+	_ragdolls = _prune(_ragdolls)
+	while _ragdolls.size() >= GameConfig.MAX_RAGDOLLS:
+		_ragdolls.pop_front().retire()
+	_ragdolls.append(ZombieRig.spawn_corpse(world, kind, pos, yaw, impulse, src.puppet if src != null else null))
 	Sfx.play_at(&"zombie_die", pos + Vector3.UP, -2.0, randf_range(0.9, 1.1))
 
 

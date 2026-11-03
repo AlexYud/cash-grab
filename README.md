@@ -37,11 +37,11 @@ GDScript, Jolt Physics.
 | Waves | `world/wave_manager.gd`, `game_config.gd` | 10 escalating waves, break between them, scales with player count |
 | Barricades | `world/barricade.gd` | 5 boards, zombies break them, hold **E** to rebuild, blocked while something stands in the gap |
 | Grab friends | `player/player.gd` (`_srv_grab`, `_srv_throw`) | pull a teammate to you. **Grab a downed teammate and you carry them** (your weapons lock): **Fire** throws them. Any player flying fast (thrown, shoved, blown up) is a bowling ball and knocks zombies over |
-| Shove | `player/player.gd` (`_srv_shove`) | cone in front of you; launches teammates, staggers zombies |
+| Shove | `player/player.gd` (`_srv_shove`) | cone in front of you; launches teammates, staggers zombies (half the time it knocks them limp into a ragdoll; Huggers always) |
 | Downed + revive | `player/player.gd` | crawl, pistol only, 45 s bleed-out, 3.5 s hold-to-revive |
 | Knockback | shove, shotgun (friendly fire = knockback, no HP), `world/explosive_barrel.gd` | host validates, owning client applies the launch |
-| Ragdolls | `characters/puppet.gd`, `fx/ragdoll.gd`, `autoload/fx.gd` | zombies ragdoll when they die (local, capped at 10). Players never ragdoll: they get knocked back and stagger |
-| Enemy AI | `enemy/zombie.gd` | walks to its entrance, breaks boards, then chases on a runtime-baked navmesh. Specials arrive from wave 3: **Brute** (big, charges in a line, launches what it hits, bonks into walls), **Hugger** (clings to a player: slows them and drains a little HP until shoved or shot off), **Leaper** (pounces, then faceplants), **Bloater** (bursts into goo when killed, knocking everyone nearby over). Health no longer regenerates: snacks are the only healing. All zombies are clumsy: they trip over junk on the ground, over fallen zombies and each other, and lie on the floor for a moment. About 8% of kills (more for specials) drop a **snack** that heals 15 HP |
+| Zombie body + ragdolls | `characters/zombie_rig.gd`, `autoload/fx.gd` | zombies use the rigged model in `assets/`: bones are posed by code per state and kind (shamble, swing, brute stomp / charge, leaper crouch + pounce, hugger cling, dance, reel). When a zombie trips, is shoved over, blown up or killed, the skeleton is handed to `PhysicalBone3D` bodies: nobody steers the limbs. Getting up blends from the ragdoll back into the animated pose. Every peer runs its own ragdoll (a tether keeps it near the host-authoritative hit shape); corpses are capped at 10. A limp zombie sliding fast bowls over whoever it hits. Players never ragdoll: they get knocked back and stagger (`characters/puppet.gd`, boxes) |
+| Enemy AI | `enemy/zombie.gd` | walks to its entrance, breaks boards, then chases on a runtime-baked navmesh (it only swings or latches with a clear line to its target, so no hitting through walls: it goes around). Specials arrive from wave 3: **Brute** (big, charges in a line, launches what it hits, bonks into walls), **Hugger** (clings to a player: slows them and drains a little HP until shoved or shot off), **Leaper** (pounces, then faceplants), **Bloater** (bursts into goo when killed, knocking everyone nearby over). Health no longer regenerates: snacks are the only healing. All zombies are clumsy: they trip over junk on the ground, over fallen zombies and each other, and lie on the floor for a moment. About 8% of kills (more for specials) drop a **snack** that heals 15 HP |
 | Proximity voice | `autoload/voice.gd` | pure GDScript (mic capture, mu-law, host relay, per-speaker 3D playback) |
 
 ## Network model (host-authoritative)
@@ -90,7 +90,7 @@ needs a window.
 
 ```powershell
 $env:GODOT_BIN = "C:\path\to\Godot_v4.7-stable_win64_console.exe"   # the console exe must sit next to the main exe
-.\tests\run_tests.ps1 -Test all          # or one of: m0 m1 m2 m3a m3b m4a m4b m4c m4d m5 m6 m7 nav soak2 soak4 hard2 hard4
+.\tests\run_tests.ps1 -Test all          # or one of: m0 m1 m2 m3a m3b m4a m4b m4c m4d m5 m6 m7 m8 nav soak2 soak4 hard2 hard4
 ```
 
 | Test | Covers |
@@ -107,6 +107,7 @@ $env:GODOT_BIN = "C:\path\to\Godot_v4.7-stable_win64_console.exe"   # the consol
 | m5 | clumsy zombies trip and lie down, brute charge, snack drop + healing, hugger latch + shove-off, friendly fire without the death ragdoll |
 | m6 | carry and throw a downed teammate (bowling), Yank Gun, Disco Blaster, Leaper pounce, Bloater burst |
 | m7 | (pistol-only start) shared cash from kills / headshot kills / specials / board repair, headshot = 2x damage, invisible walls at open windows, bandage stand + per-player cooldown, annex: price check, pull, cancel + refund, timeout refund, single-player two-lever flow, closed gate blocks, door animation, annex windows activate, mystery box, medkit, Tesla chain + lightning, Boing launch, stumble over a fallen zombie, ADS |
+| m8 | rigged zombies: every kind builds a 25-bone rig with its feet on the floor, poses differ per state (cling, charge, dance, swing, walk cycle), a trip hands the skeleton to physics (host and client), the limp body lies down near its hit shape and gets back up, a blast flings the ragdoll, a flying ragdoll bowls over a neighbour, a zombie killed while limp leaves a corpse in that pose, corpse cap |
 | nav | every window has a navmesh route from outside to the players, and the shop / lever spots are reachable |
 | soak2 / soak4 | a whole ten-wave run with 2 / 4 scripted players at 3x speed in god mode (so unskilled bots always finish); the host opens the annex from wave 3 so its windows are exercised too |
 | hard2 / hard4 | the same bots without god mode, as a difficulty probe; not part of `all` and allowed to fail |
@@ -136,7 +137,7 @@ max channels: 0"): the engine sending a sync packet to a peer that is already di
 
 ## Placeholders
 
-Characters are procedural boxes (`characters/puppet.gd`), sounds are synthesized at boot (`autoload/sfx.gd`), the
+Players are procedural boxes (`characters/puppet.gd`; zombies use the rigged model, see above), sounds are synthesized at boot (`autoload/sfx.gd`), the
 level is a blockout. Entrances are floor-level doorways (no window vaulting). The map can be replaced as long as
 `saloon_level.gd`'s node names are kept (`Nav`, `Barricades`, `Barrels`, `PlayerSpawns`, `EnemySpawns`, plus `Annex` and
 `Interactables` for the gate, levers and shops); the navmesh is baked at runtime from the level's static colliders

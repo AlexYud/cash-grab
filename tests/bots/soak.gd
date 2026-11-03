@@ -4,6 +4,10 @@ extends BotScenario
 
 const REPORT_EVERY := 3.0
 
+const STALL_LIMIT := 150.0 # game seconds without a spawn or a kill
+
+var _progress := ""
+var _progress_t := 0.0
 var _tick := 0
 var _next_report := REPORT_EVERY
 var _t := 0.0
@@ -100,6 +104,34 @@ func _host_watch() -> void:
 		for b in level.barricades:
 			boards.append(b.boards)
 		print("[SOAK] t=%ds wave=%d state=%d alive=%d to_spawn=%d melee=%d boards=%s players=%s" % [_t, wm.wave, wm.state, wm.enemies_alive, wm.to_spawn, in_melee, boards, ", ".join(states)])
+		if _t - _progress_t > 60.0: # no kill or spawn for a minute: say what each player is looking at
+			for p in Net.all_players():
+				var best: Zombie = null
+				var best_d := INF
+				for z in enemies():
+					var d := z.global_position.distance_squared_to(p.global_position)
+					if d < best_d:
+						best_d = d
+						best = z
+				if best == null:
+					continue
+				var q := PhysicsRayQueryParameters3D.create(p.global_position + Vector3(0, GameConfig.EYE_HEIGHT, 0), best.global_position + Vector3(0, 1.1, 0), GameConfig.MASK_HITSCAN, [p.get_rid()])
+				var hit := p.get_world_3d().direct_space_state.intersect_ray(q)
+				print("[SOAK] stuck? %s st=%d w=%d ammo=%d reload=%s nearest=%s kind=%d state=%d dist=%.1f hp=%d pos=%s ray=%s" % [p.player_name, p.status, p.weapons.current, p.weapons.ammo[p.weapons.current], str(p.weapons.is_reloading()), best.name, best.kind, best.state, sqrt(best_d), best.hp, str(best.global_position), str(hit["collider"].get_path()) if not hit.is_empty() else "clear"])
+		if wm.enemies_alive > 0 and wm.enemies_alive <= 2 and wm.to_spawn == 0:
+			for z in enemies(): # a lone survivor that never dies: say where it is and what it is doing
+				print("[SOAK] straggler %s kind=%d state=%d hp=%d pos=%s entrance=%d floor=%s" % [z.name, z.kind, z.state, z.hp, str(z.global_position), z.entrance_idx, str(z.is_on_floor())])
+				for p in Net.all_players(): # what would a shot from each player hit?
+					var q := PhysicsRayQueryParameters3D.create(p.global_position + Vector3(0, GameConfig.EYE_HEIGHT, 0), z.global_position + Vector3(0, 1.0, 0), GameConfig.MASK_HITSCAN, [p.get_rid()])
+					var hit := p.get_world_3d().direct_space_state.intersect_ray(q)
+					print("[SOAK]   %s at %s dist=%.1f shot hits %s" % [p.player_name, str(p.global_position), p.global_position.distance_to(z.global_position), str(hit["collider"].get_path()) if not hit.is_empty() else "nothing"])
+	var progress := "%d/%d/%d" % [wm.wave, wm.enemies_alive, wm.to_spawn]
+	if progress != _progress:
+		_progress = progress
+		_progress_t = _t
+	elif wm.state == WaveManager.State.ACTIVE and _t - _progress_t > STALL_LIMIT: # nobody died and nothing spawned for ages: a stuck zombie
+		report("soak: waves keep moving", false, "stalled on wave %d with %d zombies alive since t=%ds" % [wm.wave, wm.enemies_alive, _progress_t])
+		signal_peers("SOAK_DONE")
 	if wm.state == WaveManager.State.VICTORY:
 		report("soak: survived all %d waves" % wm.total_waves, true, "t=%ds" % _t)
 		signal_peers("SOAK_DONE")

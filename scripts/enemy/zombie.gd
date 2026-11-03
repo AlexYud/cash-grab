@@ -63,8 +63,10 @@ var _level: SaloonLevel = null
 
 # --- local ---
 var _groan_timer := randf_range(1.5, 6.0)
+var _vis_vel := Vector3.ZERO ## smoothed velocity of the rendered body (clients have no real one)
+var _last_pos := Vector3.ZERO
 
-@onready var puppet: Puppet = $Visual
+@onready var puppet: ZombieRig = $Visual
 @onready var agent: NavigationAgent3D = $Agent
 @onready var body_shape: CollisionShape3D = $Collision
 @onready var fallen_shape: CollisionShape3D = $FallenShape
@@ -92,12 +94,16 @@ func _ready() -> void:
 	collision_layer = GameConfig.L_ENEMIES
 	collision_mask = GameConfig.MASK_ENEMY_BODY
 	var st := Zombie.style(kind)
-	puppet.build(Puppet.Kind.ZOMBIE, st["shirt"], st["skin"])
+	puppet.build(st)
 	var s: float = st["scale"]
 	puppet.scale = Vector3.ONE * s
 	body_shape.scale = Vector3.ONE * s
 	body_shape.position.y = 0.85 * s
 	fallen_shape.disabled = true
+	if state == State.FALLEN: # joined while it was on the floor
+		puppet.start_ragdoll(Vector3.ZERO, self)
+		body_shape.disabled = true
+		fallen_shape.disabled = false
 	agent.path_desired_distance = 0.5
 	agent.target_desired_distance = 1.0
 	agent.radius = 0.4
@@ -117,14 +123,14 @@ func _exit_tree() -> void:
 static func style(k: int) -> Dictionary:
 	match k:
 		Kind.BRUTE:
-			return {"shirt": Color(0.5, 0.16, 0.12), "skin": Color(0.58, 0.42, 0.36), "scale": 1.35}
+			return {"kind": k, "shirt": Color(0.5, 0.16, 0.12), "skin": Color(0.58, 0.42, 0.36), "scale": 1.35}
 		Kind.HUGGER:
-			return {"shirt": Color(0.78, 0.66, 0.18), "skin": Color(0.72, 0.78, 0.36), "scale": 0.7}
+			return {"kind": k, "shirt": Color(0.78, 0.66, 0.18), "skin": Color(0.72, 0.78, 0.36), "scale": 0.7}
 		Kind.LEAPER:
-			return {"shirt": Color(0.75, 0.25, 0.3), "skin": Color(0.82, 0.5, 0.42), "scale": 0.9}
+			return {"kind": k, "shirt": Color(0.75, 0.25, 0.3), "skin": Color(0.82, 0.5, 0.42), "scale": 0.9}
 		Kind.BLOATER:
-			return {"shirt": Color(0.45, 0.6, 0.2), "skin": Color(0.62, 0.78, 0.35), "scale": 1.25}
-	return {"shirt": Color.WHITE, "skin": Color(0, 0, 0, 0), "scale": 1.0}
+			return {"kind": k, "shirt": Color(0.45, 0.6, 0.2), "skin": Color(0.62, 0.78, 0.35), "scale": 1.25}
+	return {"kind": k, "shirt": Color.WHITE, "skin": Color(0, 0, 0, 0), "scale": 1.0}
 
 
 static func find_by_id(tree: SceneTree, id: int) -> Zombie:
@@ -159,12 +165,20 @@ func _set_state(v: int) -> void:
 	if not is_node_ready():
 		return
 	var down := v == State.FALLEN
-	puppet.set_downed(down)
-	puppet.set_dancing(v == State.DANCE)
 	body_shape.set_deferred("disabled", down)
 	fallen_shape.set_deferred("disabled", not down)
-	if down and was != State.FALLEN:
+	if down and was != State.FALLEN: # no more control: the skeleton goes limp
+		puppet.start_ragdoll(_ragdoll_velocity(), self)
 		Sfx.play_at(&"hit_world", global_position + Vector3.UP * 0.3, -2.0, randf_range(0.45, 0.6))
+	elif was == State.FALLEN and not down:
+		puppet.end_ragdoll()
+
+
+## How fast the body was going when it went limp: exact on the host, estimated from the replicated motion elsewhere.
+func _ragdoll_velocity() -> Vector3:
+	if multiplayer.is_server():
+		return Vector3(velocity.x + _knock.x, maxf(velocity.y, 0.0), velocity.z + _knock.z)
+	return _vis_vel
 
 
 # =================================================================================================
@@ -235,6 +249,8 @@ func _physics_process(delta: float) -> void:
 	else:
 		velocity.y -= GameConfig.GRAVITY * delta
 	move_and_slide()
+	if state == State.FALLEN and _knock.length() > 3.5:
+		_bowl_neighbours()
 	var flat := Vector3(desired.x, 0.0, desired.z)
 	if flat.length() > 0.1 and _charge_left <= 0.0:
 		rotation.y = lerp_angle(rotation.y, _yaw_to(flat), 1.0 - exp(-10.0 * delta))
@@ -281,7 +297,8 @@ func _chase(delta: float) -> Vector3:
 	var to := tp - global_position
 	to.y = 0.0
 	var d := to.length()
-	if kind == Kind.HUGGER and d <= 1.35:
+	var in_reach := d <= GameConfig.ZOMBIE_ATTACK_RANGE + 0.2 and _clear_line(tp) # no swinging through walls: go around
+	if kind == Kind.HUGGER and d <= 1.35 and in_reach:
 		_latch(_target)
 		return Vector3.ZERO
 	if kind == Kind.BRUTE and _charge_cd <= 0.0 and d > GameConfig.BRUTE_CHARGE_MIN and d < GameConfig.BRUTE_CHARGE_MAX and _clear_line(tp):
@@ -295,7 +312,7 @@ func _chase(delta: float) -> Vector3:
 		_charge_dir = to.normalized()
 		fx_attack.rpc()
 		return Vector3.ZERO
-	if d <= GameConfig.ZOMBIE_ATTACK_RANGE - 0.15 and kind != Kind.HUGGER:
+	if d <= GameConfig.ZOMBIE_ATTACK_RANGE - 0.15 and kind != Kind.HUGGER and in_reach:
 		rotation.y = lerp_angle(rotation.y, _yaw_to(to), 1.0 - exp(-12.0 * delta))
 		state = State.IDLE
 		if _attack_cd <= 0.0:
@@ -351,6 +368,20 @@ func _separation(delta: float) -> Vector3:
 				if randf() < 0.2:
 					o.srv_trip(dir * 2.0)
 	return push * 2.0
+
+
+## A limp zombie sliding or flying across the floor flattens whoever stands in its way (a domino of ragdolls).
+func _bowl_neighbours() -> void:
+	var dir := _knock.normalized()
+	for n in get_tree().get_nodes_in_group("enemies"):
+		var o := n as Zombie
+		if o == null or o == self or o.is_dead() or o.is_fallen() or o.kind == Kind.BRUTE or o.state == State.LATCHED:
+			continue
+		var d := o.global_position - global_position
+		d.y = 0.0
+		if d.length() < 1.1:
+			o.srv_trip(dir * minf(_knock.length(), 7.0) * 0.8)
+			_knock *= 0.7 # it gave up some speed doing so
 
 
 func _check_trip(desired: Vector3, delta: float) -> void:
@@ -596,6 +627,8 @@ func srv_trip(push: Vector3 = Vector3.ZERO) -> void:
 	_trip_cd = GameConfig.TRIP_COOLDOWN + _fall_left
 	add_knock(push)
 	state = State.FALLEN
+	if push.length() > 0.1:
+		fx_kick.rpc(push * 0.6 + Vector3.UP * 1.5)
 
 
 ## Disco Blaster: the zombie dances instead of attacking for a few seconds.
@@ -634,6 +667,7 @@ func srv_boing() -> void:
 	_fall_left = 0.0 # so srv_trip is allowed even if it was already down
 	srv_trip(Vector3.ZERO)
 	velocity.y = 9.0 if kind != Kind.BRUTE else 4.0
+	fx_kick.rpc(Vector3(0.0, velocity.y * 0.7, 0.0))
 	if kind == Kind.BRUTE:
 		_stagger = 0.8
 
@@ -679,8 +713,8 @@ func srv_shoved(dir: Vector3, from: Player) -> void:
 	if _latched != null:
 		_unlatch(1.8)
 	srv_hit(GameConfig.SHOVE_ENEMY_DAMAGE, dir * GameConfig.SHOVE_ENEMY_H, GameConfig.SHOVE_ENEMY_STAGGER, from)
-	if kind == Kind.HUGGER and not _dead:
-		srv_trip(dir * 3.0) # sent tumbling
+	if not _dead and (kind == Kind.HUGGER or randf() < GameConfig.SHOVE_TRIP_CHANCE):
+		srv_trip(dir * 3.0) # sent tumbling: the skeleton goes limp
 
 
 func srv_explode(damage: int, impulse: Vector3, source: Player) -> void:
@@ -690,6 +724,7 @@ func srv_explode(damage: int, impulse: Vector3, source: Player) -> void:
 	srv_hit(damage, impulse, 1.4, source)
 	if not _dead:
 		srv_trip(Vector3.ZERO)
+		fx_kick.rpc(impulse * 0.8) # blown across the room, limbs everywhere
 
 
 func _die(source: Player) -> void:
@@ -704,7 +739,7 @@ func _die(source: Player) -> void:
 	if wm != null:
 		wm.srv_add_cash((GameConfig.CASH_KILL if kind == Kind.NORMAL else GameConfig.CASH_KILL_SPECIAL) + (GameConfig.CASH_HEADSHOT_BONUS if _last_hit_head else 0))
 	Fx.srv_try_snack(global_position, kind)
-	Fx.enemy_died.rpc(global_position, rotation.y, _knock * 1.4 + Vector3(0, 3.0, 0), kind)
+	Fx.enemy_died.rpc(global_position, rotation.y, _knock * 1.4 + Vector3(0, 3.0, 0), kind, net_id)
 	died.emit(self)
 	queue_free()
 
@@ -725,7 +760,10 @@ func _process(delta: float) -> void:
 			global_position = global_position.lerp(sync_pos, k)
 		rotation.y = lerp_angle(rotation.y, sync_yaw, k)
 		spd = sync_speed
-	puppet.animate(delta, spd * 1.4, state == State.LEAP)
+	if delta > 0.0:
+		_vis_vel = _vis_vel.lerp((global_position - _last_pos) / delta, 1.0 - exp(-12.0 * delta))
+	_last_pos = global_position
+	puppet.animate(delta, spd, state, state == State.LEAP)
 	_groan_timer -= delta
 	if _groan_timer <= 0.0:
 		_groan_timer = randf_range(4.0, 9.0)
@@ -737,6 +775,12 @@ func _process(delta: float) -> void:
 func fx_attack() -> void:
 	puppet.play_attack()
 	Sfx.play_at(&"zombie_attack", global_position + Vector3.UP * 1.4, -7.0, randf_range(0.9, 1.1) * (1.6 if kind == Kind.HUGGER else 1.0))
+
+
+## A shove or blast that happens as the zombie goes limp: every peer's ragdoll gets it too.
+@rpc("authority", "call_local", "unreliable")
+func fx_kick(v: Vector3) -> void:
+	puppet.kick(v)
 
 
 @rpc("authority", "call_local", "unreliable")

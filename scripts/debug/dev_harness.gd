@@ -147,7 +147,10 @@ func finish() -> void:
 	# sometimes hit an engine access violation on exit
 	if Net.phase != Net.Phase.MENU:
 		Net.leave("")
-	await get_tree().create_timer(0.3).timeout
+	for r in Fx._ragdolls: # limp bodies hold physics joints: let them go before the engine shuts down
+		if is_instance_valid(r):
+			r.queue_free()
+	await get_tree().create_timer(0.6).timeout
 	get_tree().quit(1 if fails > 0 else 0)
 
 

@@ -16,10 +16,12 @@ func run() -> void:
 	signal_peers("C_lobby_ok")
 	var back := await wait_until(func() -> bool: return Net.phase == Net.Phase.PLAYING and Net.all_players().size() == 2 and Net.local_player != null, 12.0)
 	report("client: second run starts and the player spawns again", back)
-	await wait(1.0)
 	var wm := wave_manager()
 	var level := get_tree().get_first_node_in_group("level") as SaloonLevel
-	report("client: world state is fresh (boards, barrel, wave)", level.barricades[1].boards == Barricade.MAX_BOARDS and level.barrels[0].alive and wm.state == WaveManager.State.BREAK, "boards=%d barrel=%s state=%d" % [level.barricades[1].boards, level.barrels[0].alive, wm.state])
+	# the host's reset reaches this peer through the synchronizers, which tick every 0.1-0.2 s: poll instead of guessing a delay
+	var t0 := Time.get_ticks_msec()
+	var fresh := await wait_until(func() -> bool: return level.barricades[1].boards == Barricade.MAX_BOARDS and level.barrels[0].alive and wm.state == WaveManager.State.BREAK, 6.0)
+	report("client: world state is fresh (boards, barrel, wave)", fresh, "boards=%d barrel=%s state=%d after=%.1fs" % [level.barricades[1].boards, level.barrels[0].alive, wm.state, (Time.get_ticks_msec() - t0) / 1000.0])
 	var lp := Net.local_player
 	var start := lp.global_position
 	lp.input.move = Vector2(0, -1)

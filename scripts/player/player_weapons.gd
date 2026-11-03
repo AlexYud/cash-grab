@@ -158,8 +158,9 @@ func _fire() -> void:
 			kind = Hit.ENEMY
 			id = zc.net_id
 			enemy_hit = true
-			# the top of a standing zombie is its head (fallen ones are a flat body: no headshots)
-			head = not zc.is_fallen() and pos.y - zc.global_position.y > GameConfig.HEAD_HEIGHT * zc.puppet.scale.x
+			# a hit level with or above the animated head is a headshot, so a crouching or lunging zombie's lower head
+			# counts too (limp ones are a flat body: no headshots)
+			head = not zc.is_fallen() and pos.y > zc.puppet.head_position().y - GameConfig.HEAD_BAND * zc.puppet.scale.x
 		elif col is Player:
 			kind = Hit.PLAYER
 			id = (col as Player).peer_id

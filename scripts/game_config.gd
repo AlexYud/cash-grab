@@ -18,6 +18,7 @@ const MASK_PLAYER_BODY := L_WORLD | L_ENEMIES | L_BARRICADES | L_PROPS | L_PLAYE
 const MASK_ENEMY_BODY := L_WORLD | L_PLAYERS | L_BARRICADES | L_PROPS
 const MASK_HITSCAN := L_WORLD | L_PLAYERS | L_ENEMIES | L_PROPS | L_HUG
 const MASK_RAGDOLL := L_WORLD | L_PROPS
+const MASK_ZOMBIE_RAGDOLL := L_WORLD | L_PROPS | L_BARRICADES | L_PLAYERS | L_RAGDOLLS ## limp zombies pile up and players can bump them around
 
 # --- Player movement ---
 const PLAYER_MAX_HP := 100
@@ -47,6 +48,7 @@ const SHOVE_PLAYER_V := 4.0
 const SHOVE_ENEMY_H := 6.5
 const SHOVE_ENEMY_STAGGER := 0.9
 const SHOVE_ENEMY_DAMAGE := 8
+const SHOVE_TRIP_CHANCE := 0.5 ## chance that a shoved zombie (other than the brute) goes limp instead of just reeling
 
 # --- Grab / drag ---
 const GRAB_REACH := 2.8
@@ -163,7 +165,7 @@ const BOWLING_DAMAGE := 25
 
 # --- Headshots, aiming down sights, stumbling on fallen zombies ---
 const HEADSHOT_MULT := 2.0 ## critical damage, not an instant kill
-const HEAD_HEIGHT := 1.38 ## metres above a zombie's feet (scaled with its size) where the head starts
+const HEAD_BAND := 0.15 ## metres (scaled with the zombie's size) below the middle of the animated head where a headshot still counts
 const ADS_FOV := 52.0
 const ADS_SPREAD_MULT := 0.35
 const ADS_SPEED_MULT := 0.65
