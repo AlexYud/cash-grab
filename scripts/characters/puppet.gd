@@ -11,6 +11,7 @@ const ZOMBIE_SHIRT := Color(0.32, 0.27, 0.24)
 const PANTS := Color(0.22, 0.25, 0.33)
 const HAT := Color(0.24, 0.16, 0.1)
 const ZOMBIE_ATTACK_TIME := 0.55
+const SWING_TIME := 0.42
 
 var kind: int = Kind.PLAYER
 var downed := false
@@ -30,6 +31,8 @@ var _t := 0.0
 var _shove_t := 0.0
 var _attack_t := 0.0
 var _hurt_t := 0.0
+var _swing_t := 0.0 ## a melee swing seen on this character (see play_swing)
+var _swing_kind := 0
 var _body_y := 0.82
 var _body_pitch := 0.0
 var _ragdoll: Ragdoll = null
@@ -190,6 +193,12 @@ func play_attack() -> void:
 	_attack_t = ZOMBIE_ATTACK_TIME
 
 
+## Melee swing for other players' characters: 0 overhead chop, 1 sweep right-to-left, 2 sweep back.
+func play_swing(step: int, finisher: bool) -> void:
+	_swing_kind = 0 if finisher else (1 if step % 2 == 0 else 2)
+	_swing_t = SWING_TIME
+
+
 func play_hurt() -> void:
 	_hurt_t = 0.18
 
@@ -200,6 +209,7 @@ func animate(delta: float, speed: float, airborne: bool, sprinting: bool = false
 	_t += delta
 	_shove_t = maxf(_shove_t - delta, 0.0)
 	_attack_t = maxf(_attack_t - delta, 0.0)
+	_swing_t = maxf(_swing_t - delta, 0.0)
 	_hurt_t = maxf(_hurt_t - delta, 0.0)
 	var amp := clampf(speed / 5.0, 0.0, 1.3)
 	if speed > 0.3 and not airborne:
@@ -272,6 +282,24 @@ func animate(delta: float, speed: float, airborne: bool, sprinting: bool = false
 			_arm_l.rotation.x = -swing * 0.8
 			_arm_r.rotation.x = swing * 0.8
 
+	if _swing_t > 0.0 and not downed and kind == Kind.PLAYER: # a melee swing: wind up, strike, follow through
+		var u := 1.0 - _swing_t / SWING_TIME
+		if _swing_kind == 0:
+			var a := lerpf(86.0, 178.0, smoothstep(0.0, 0.4, u))
+			a = lerpf(a, 12.0, smoothstep(0.4, 0.62, u))
+			a = lerpf(a, 86.0, smoothstep(0.62, 1.0, u))
+			_arm_r.rotation.x = deg_to_rad(a)
+			body.rotation.x += 0.35 * sin(smoothstep(0.4, 0.7, u) * PI) # leans into the chop
+		else:
+			var sgn := 1.0 if _swing_kind == 1 else -1.0
+			var sweep := lerpf(-sgn * 70.0, sgn * 60.0, smoothstep(0.2, 0.65, u))
+			sweep = lerpf(sweep, 0.0, smoothstep(0.65, 1.0, u))
+			_arm_r.rotation.x = deg_to_rad(86.0)
+			_arm_r.rotation.z = deg_to_rad(sweep)
+			body.rotation.y = deg_to_rad(-sweep * 0.5)
+	elif not downed and kind == Kind.PLAYER:
+		_arm_r.rotation.z = lerpf(_arm_r.rotation.z, 0.0, k)
+		body.rotation.y = lerpf(body.rotation.y, 0.0, k)
 	var f := _hurt_t / 0.18
 	for m in _mats:
 		m.emission_enabled = f > 0.0

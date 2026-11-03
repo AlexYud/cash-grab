@@ -32,4 +32,13 @@ func run() -> void:
 	for spot in [Vector3(58.2, 0, -5.0), Vector3(34.2, 0, 6.6), Vector3(34.6, 0, -6.8), Vector3(34.6, 0, 3.4), Vector3(40.0, 0, 0.0), Vector3(10.2, 0, -4.8), Vector3(10.2, 0, 3.8), Vector3(-9.0, 0, 6.4)]:
 		var p := NavigationServer3D.map_get_path(map, target, spot, true)
 		report("path from the spawn to %s" % str(spot), p.size() >= 2 and p[p.size() - 1].distance_to(spot) < 1.0, "points=%d" % p.size())
+	# every wall buy, machine, lever and shop can be walked up to
+	var unreachable := PackedStringArray()
+	for n in get_tree().get_nodes_in_group("interactables"):
+		var it := n as Interactable
+		var spot := it.global_position + it.global_basis.z.normalized() * 0.4
+		var pth := NavigationServer3D.map_get_path(map, target, spot, true)
+		if pth.size() < 2 or pth[pth.size() - 1].distance_to(spot) > 1.0:
+			unreachable.append(str(it.name))
+	report("every interactable (wall buys, machines, levers, shops) is reachable", unreachable.is_empty(), ", ".join(unreachable))
 	finish()

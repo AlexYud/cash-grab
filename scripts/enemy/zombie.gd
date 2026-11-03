@@ -39,6 +39,14 @@ var _swing := Swing.NONE
 var _swing_left := 0.0
 var _attack_cd := 0.0
 var _board_cd := 0.0
+var _board_target: Barricade = null ## the barricade the current (or last) board swing is aimed at
+var _entered := false ## got through its own window (or gave up on it): from then on it just chases
+var _side_checked := false
+var _stall := 0.0 ## seconds spent pushing against something without getting anywhere
+var _unstick_left := 0.0
+var _unstick_dir := Vector3.ZERO
+var _walk_dir := Vector3.ZERO
+var _plowed_cd := 0.0 ## a brute just threw this zombie: not again right away
 var _stagger := 0.0
 var _knock := Vector3.ZERO
 var _path_timer := 0.0
@@ -66,6 +74,11 @@ var _bleed_accum := 0.0
 var _bleed_src: Player = null
 var _freeze_left := 0.0
 var _freeze_mult := 1.0
+var _burn_left := 0.0
+var _burn_dps := 0.0
+var _burn_accum := 0.0
+var _burn_spread := 0.0
+var _burn_src: Player = null
 var _last_hit_head := false
 var _level: SaloonLevel = null
 
@@ -233,6 +246,7 @@ func _physics_process(delta: float) -> void:
 		_tick_latched(delta)
 		return
 	var desired := Vector3.ZERO
+	var thinking := false
 	if _fall_left > 0.0:
 		_fall_left -= delta
 		state = State.FALLEN
@@ -270,14 +284,20 @@ func _physics_process(delta: float) -> void:
 	elif _swing_left > 0.0:
 		_swing_left -= delta
 		state = State.ATTACK if _swing == Swing.PLAYER else State.BARRICADE
-		if _swing_left <= 0.0:
+		if _swing == Swing.BOARD and (_board_target == null or _board_target.boards <= 0):
+			_swing_left = 0.0 # somebody else just tore down the last board: nothing left to hit
+			_swing = Swing.NONE
+			_board_cd = 0.0
+		elif _swing_left <= 0.0:
 			_resolve_swing()
 	else:
+		thinking = true
 		desired = _think(delta)
 		_check_trip(desired, delta)
 	if desired.length() > 0.01:
 		desired += _separation(delta)
-	_knock = _knock.move_toward(Vector3.ZERO, 12.0 * delta)
+	var slide := GameConfig.FALL_SLIDE_DECAY if state == State.FALLEN else 12.0
+	_knock = _knock.move_toward(Vector3.ZERO, (slide if is_on_floor() else 1.5) * delta)
 	if _freeze_left > 0.0:
 		desired *= _freeze_mult
 	velocity.x = desired.x + _knock.x
@@ -287,6 +307,10 @@ func _physics_process(delta: float) -> void:
 	else:
 		velocity.y -= GameConfig.GRAVITY * delta
 	move_and_slide()
+	_track_stall(desired, thinking, delta)
+	_plowed_cd = maxf(_plowed_cd - delta, 0.0)
+	if kind == Kind.BRUTE and not _dead:
+		_plow()
 	if state == State.FALLEN and _knock.length() > 3.5:
 		_bowl_neighbours()
 	var flat := Vector3(desired.x, 0.0, desired.z)
@@ -301,6 +325,23 @@ func _physics_process(delta: float) -> void:
 func _tick_status(delta: float) -> void:
 	if _freeze_left > 0.0:
 		_freeze_left -= delta
+	if _burn_left > 0.0:
+		_burn_left -= delta
+		_burn_accum += _burn_dps * delta
+		_burn_spread -= delta
+		if _burn_spread <= 0.0:
+			_burn_spread = 0.6
+			for n in get_tree().get_nodes_in_group("enemies"): # fire spreads to whoever stands close
+				var o := n as Zombie
+				if o != null and o != self and not o.is_dead() and o._burn_left <= 0.0 and o.global_position.distance_to(global_position) < 1.6:
+					o.srv_ignite(_burn_dps * 0.6, 2.5, _burn_src if is_instance_valid(_burn_src) else null)
+		if _burn_accum >= 1.0:
+			var burn := int(_burn_accum)
+			_burn_accum -= burn
+			hp -= burn
+			if hp <= 0:
+				_die(_burn_src if is_instance_valid(_burn_src) else null)
+				return
 	if _bleed_left > 0.0:
 		_bleed_left -= delta
 		_bleed_accum += _bleed_dps * delta
@@ -311,6 +352,16 @@ func _tick_status(delta: float) -> void:
 			hp -= tick # not srv_hit: bleeding does not flinch or push
 			if hp <= 0:
 				_die(src)
+
+
+## On fire: damage over time, and the flames jump to neighbours (they catch fire for a short while).
+func srv_ignite(dps: float, seconds: float, source: Player) -> void:
+	if _dead:
+		return
+	_burn_dps = maxf(_burn_dps if _burn_left > 0.0 else 0.0, dps)
+	_burn_left = seconds
+	_burn_src = source
+	fx_status.rpc(2, seconds)
 
 
 func srv_bleed(dps: float, seconds: float, source: Player) -> void:
@@ -402,32 +453,96 @@ func _land() -> void:
 
 func _think(delta: float) -> Vector3:
 	var bar := _my_barricade()
-	var inside := bar != null and bar.is_inside(global_position)
 	_retarget -= delta
 	if _retarget <= 0.0:
 		_retarget = 0.4
 		_target = _pick_target()
-	if bar != null and not inside and bar.boards > 0:
+	if bar != null and not _side_checked:
+		_side_checked = true
+		_entered = bar.is_inside(global_position) # a zombie placed indoors has no window to go through
+	if bar != null and not _entered and bar.is_inside(global_position) and absf(bar.lateral(global_position)) < 2.4:
+		_entered = true # it is in the doorway of its own window: through
+	if _unstick_left > 0.0:
+		_unstick_left -= delta
+		state = State.CHASE
+		return _unstick_dir * move_speed
+	if _stall >= 0.45:
+		var wall := _wall_ahead()
+		if wall != null:
+			return _bash(wall, delta) # whatever got it here, a boarded window it is pushing against gets broken
+		if _stall >= 1.6:
+			_entered = true # stuck on something that is not a window: forget the queue, walk around it
+			_stall = 0.0
+			var side := Vector3(-_walk_dir.z, 0.0, _walk_dir.x) if _walk_dir != Vector3.ZERO else Vector3.RIGHT
+			_unstick_dir = (side * (1.0 if randf() < 0.5 else -1.0) + Vector3(randf_range(-0.4, 0.4), 0.0, randf_range(-0.4, 0.4))).normalized()
+			_unstick_left = 0.7
+	if bar != null and not _entered and bar.boards > 0:
 		return _approach_barricade(bar, delta)
 	return _chase(delta)
 
 
 func _approach_barricade(bar: Barricade, delta: float) -> Vector3:
-	var out := bar.outward_dir()
-	if bar.distance_outside(global_position) <= 1.55:
-		rotation.y = lerp_angle(rotation.y, _yaw_to(-out), 1.0 - exp(-12.0 * delta))
-		state = State.BARRICADE
-		_board_cd -= delta
-		if _board_cd <= 0.0:
-			_board_cd = GameConfig.ZOMBIE_BOARD_INTERVAL
-			_begin_swing(Swing.BOARD)
-		return Vector3.ZERO
-	var to := bar.slot_position(slot_idx) - global_position
+	if bar.distance_outside(global_position) <= 1.55 and absf(bar.lateral(global_position)) <= 1.75:
+		return _bash(bar, delta)
+	var goal := bar.slot_position(slot_idx)
+	var to := goal - global_position
 	to.y = 0.0
 	state = State.CHASE
-	if to.length() < 0.25:
-		return -out * move_speed * 0.5
-	return to.normalized() * move_speed
+	var dir := to
+	if to.length() > 4.0: # far away the street is not a straight line (props, corners): follow the navmesh to the window
+		_path_timer -= delta
+		if _path_timer <= 0.0:
+			_path_timer = 0.25
+			agent.target_position = goal
+		dir = _next_path_point(goal) - global_position
+		dir.y = 0.0
+		if dir.length() < 0.05:
+			dir = to
+	return dir.normalized() * move_speed
+
+
+## Stands in front of a boarded window (from either side) and hits the boards.
+func _bash(bar: Barricade, delta: float) -> Vector3:
+	var toward := -bar.outward_dir() if bar.distance_outside(global_position) >= 0.0 else bar.outward_dir()
+	rotation.y = lerp_angle(rotation.y, _yaw_to(toward), 1.0 - exp(-12.0 * delta))
+	state = State.BARRICADE
+	_board_target = bar
+	_board_cd -= delta
+	if _board_cd <= 0.0:
+		_board_cd = GameConfig.ZOMBIE_BOARD_INTERVAL
+		_begin_swing(Swing.BOARD)
+	return Vector3.ZERO
+
+
+## The boarded window right in front of this zombie, if it is standing at one.
+func _wall_ahead() -> Barricade:
+	if _level == null:
+		return null
+	var best: Barricade = null
+	var best_d := INF
+	for b in _level.barricades:
+		if b.boards <= 0 or absf(b.lateral(global_position)) > 1.75:
+			continue
+		var side := b.distance_outside(global_position)
+		var d := absf(side)
+		if d <= 1.55 and d < best_d and signf(side) * b.outward_dir().dot(_walk_dir) < -0.5: # only when it is walking into it
+			best_d = d
+			best = b
+	return best
+
+
+## Counts the time a walking zombie makes no headway (jammed against a window, a wall or a prop).
+func _track_stall(desired: Vector3, thinking: bool, delta: float) -> void:
+	var want := Vector2(desired.x, desired.z).length()
+	if want >= 0.5:
+		_walk_dir = Vector3(desired.x, 0.0, desired.z).normalized()
+	if not thinking or want < 0.5 or _unstick_left > 0.0:
+		_stall = maxf(_stall - 2.0 * delta, 0.0)
+		return
+	if Vector2(get_real_velocity().x, get_real_velocity().z).length() < want * 0.25:
+		_stall += delta
+	else:
+		_stall = maxf(_stall - 2.0 * delta, 0.0)
 
 
 func _chase(delta: float) -> Vector3:
@@ -506,7 +621,7 @@ func _separation(delta: float) -> Vector3:
 			if d < 0.55 and o.kind != Kind.BRUTE and randf() < 0.5 * delta:
 				var dir := -away / d # shove the neighbour; now and then it goes down
 				o.add_knock(dir * 2.5)
-				if randf() < 0.2:
+				if randf() < 0.3:
 					o.srv_trip(dir * 2.0)
 	return push * 2.0
 
@@ -590,13 +705,28 @@ func _begin_swing(swing_kind: int) -> void:
 	_swing = swing_kind as Swing
 	_swing_left = GameConfig.ZOMBIE_WINDUP
 	fx_attack.rpc()
-	if swing_kind == Swing.PLAYER: # wild swings sometimes whack a neighbour
-		for n in get_tree().get_nodes_in_group("enemies"):
-			var o := n as Zombie
-			if o != null and o != self and not o.is_fallen() and o.kind != Kind.BRUTE and o.global_position.distance_to(global_position) < 1.1 and randf() < 0.18:
-				var away := o.global_position - global_position
-				away.y = 0.0
-				o.srv_trip(away.normalized() * 3.0)
+
+
+## The strike of a swing at a player is wild: it can catch a neighbour in front, and can throw the attacker off balance.
+func _clumsy_swing() -> void:
+	var fwd := Vector3(-global_basis.z.x, 0.0, -global_basis.z.z).normalized()
+	for n in get_tree().get_nodes_in_group("enemies"):
+		var o := n as Zombie
+		if o == null or o == self or o.is_fallen() or o.is_dead() or o.kind == Kind.BRUTE or o._crawl_phase < 3 or o.state == State.LATCHED:
+			continue
+		var away := o.global_position - global_position
+		away.y = 0.0
+		var d := away.length()
+		if d > 1.35 or d < 0.01 or away.normalized().dot(fwd) < 0.2:
+			continue
+		if randf() < GameConfig.CLUMSY_HIT_CHANCE:
+			if randf() < GameConfig.CLUMSY_TRIP_CHANCE:
+				o.srv_trip(away.normalized() * 3.5)
+			else:
+				o.add_knock(away.normalized() * 2.5)
+				o._stagger = maxf(o._stagger, 0.5)
+	if kind != Kind.BRUTE and kind != Kind.HUGGER and randf() < GameConfig.CLUMSY_SELF_TRIP:
+		srv_trip(fwd * 2.5) # over-reached and went down with it
 
 
 func _resolve_swing() -> void:
@@ -608,9 +738,10 @@ func _resolve_swing() -> void:
 			flat.y = 0.0
 			if flat.length() <= GameConfig.ZOMBIE_ATTACK_RANGE + 0.4:
 				_target.srv_take_damage(damage_amount(), global_position)
+		_clumsy_swing()
 	elif swing_kind == Swing.BOARD:
-		var bar := _my_barricade()
-		if bar != null and bar.boards > 0 and bar.distance_outside(global_position) <= 2.0:
+		var bar := _board_target
+		if bar != null and bar.boards > 0 and absf(bar.distance_outside(global_position)) <= 2.0 and absf(bar.lateral(global_position)) <= 2.0:
 			var mult := GameConfig.BRUTE_BOARD_MULT if kind == Kind.BRUTE else (0.5 if kind == Kind.HUGGER else 1.0)
 			bar.srv_damage(GameConfig.ZOMBIE_BOARD_DAMAGE * mult)
 
@@ -632,10 +763,6 @@ func _tick_charge(delta: float) -> Vector3:
 			p.srv_launch(_charge_dir * 11.0 + Vector3.UP * 4.5, 0.9, true)
 			_charge_left = 0.0
 			_stagger = 0.6
-	for n in get_tree().get_nodes_in_group("enemies"):
-		var o := n as Zombie
-		if o != null and o != self and o.kind != Kind.BRUTE and not o.is_fallen() and o.global_position.distance_to(global_position) < 1.3:
-			o.srv_trip(_charge_dir * 6.0) # bowling pins
 	if _charge_left > 0.0 and _charge_left < GameConfig.BRUTE_CHARGE_TIME - 0.25:
 		for i in get_slide_collision_count():
 			if get_slide_collision(i).get_normal().y < 0.5: # ran into a wall: bonk
@@ -774,6 +901,39 @@ func srv_trip(push: Vector3 = Vector3.ZERO) -> void:
 		fx_kick.rpc(push * 0.6 + Vector3.UP * 1.5)
 
 
+## Flung by something huge: goes limp, flies, then slides a long way (Human Fall Flat style).
+func srv_throw(dir: Vector3, speed: float, lift: float) -> void:
+	if _dead or kind == Kind.BRUTE or _latched != null or _crawl_phase < 3:
+		return
+	var flat := Vector3(dir.x, 0.0, dir.z).normalized()
+	add_knock(flat * speed) # before going limp, so the ragdoll starts with the momentum
+	velocity.y = maxf(velocity.y, lift)
+	if _fall_left > 0.0: # already down: it just takes off again
+		_fall_left = maxf(_fall_left, 1.2)
+		fx_kick.rpc(flat * speed * 0.4 + Vector3.UP * lift * 0.6)
+		return
+	srv_trip()
+	fx_kick.rpc(flat * speed * 0.4 + Vector3.UP * lift * 0.6)
+
+
+## The giant barges through its own kind: whatever it walks into is thrown out of the way.
+func _plow() -> void:
+	var fwd := Vector3(-global_basis.z.x, 0.0, -global_basis.z.z).normalized()
+	for n in get_tree().get_nodes_in_group("enemies"):
+		var o := n as Zombie
+		if o == null or o == self or o.kind == Kind.BRUTE or o.is_dead() or o._plowed_cd > 0.0 or o._latched != null or o._crawl_phase < 3:
+			continue
+		var away := o.global_position - global_position
+		away.y = 0.0
+		var d := away.length()
+		if d > GameConfig.BRUTE_PLOW_RADIUS or d < 0.01:
+			continue
+		if away.normalized().dot(fwd) < 0.2 and _charge_left <= 0.0:
+			continue
+		o._plowed_cd = 1.0
+		o.srv_throw((away.normalized() + fwd).normalized(), GameConfig.BRUTE_THROW_SPEED * (1.5 if _charge_left > 0.0 else 1.0), GameConfig.BRUTE_THROW_LIFT)
+
+
 ## Disco Blaster: the zombie dances instead of attacking for a few seconds.
 func srv_dance(seconds: float) -> void:
 	if _dead:
@@ -885,6 +1045,12 @@ func _die(source: Player) -> void:
 	if wm != null:
 		wm.srv_add_cash((GameConfig.CASH_KILL if kind == Kind.NORMAL else GameConfig.CASH_KILL_SPECIAL) + (GameConfig.CASH_HEADSHOT_BONUS if _last_hit_head else 0))
 	Fx.srv_try_snack(global_position, kind)
+	if source != null and is_instance_valid(source): # the Pinata upgrade
+		var pin := source.weapons.mod_level(source.weapons.current, &"pinata")
+		if pin > 0 and randf() < minf(0.25 * pin, 0.9):
+			Fx.srv_try_snack(global_position + Vector3(randf_range(-0.6, 0.6), 0.0, randf_range(-0.6, 0.6)), kind, true)
+			if wm != null:
+				wm.srv_add_cash(GameConfig.CASH_KILL / 2 * pin)
 	Fx.enemy_died.rpc(global_position, rotation.y, _knock * 1.4 + Vector3(0, 3.0, 0), kind, net_id)
 	died.emit(self)
 	queue_free()
@@ -932,7 +1098,7 @@ func fx_kick(v: Vector3) -> void:
 ## A colour wash on the body for a while: 0 bleeding (red), 1 frozen (blue).
 @rpc("authority", "call_local", "unreliable")
 func fx_status(what: int, seconds: float) -> void:
-	puppet.set_tint(Color(1.0, 0.45, 0.45) if what == 0 else Color(0.55, 0.8, 1.35), seconds)
+	puppet.set_tint([Color(1.0, 0.45, 0.45), Color(0.55, 0.8, 1.35), Color(1.5, 0.75, 0.25)][what], seconds)
 
 
 @rpc("authority", "call_local", "unreliable")

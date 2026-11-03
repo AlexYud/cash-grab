@@ -487,8 +487,7 @@ func _build_saloon() -> void:
 	gate_sign.position = Vector3(10.85, 3.35, 0)
 	gate_sign.rotation_degrees = Vector3(0, -90, 0)
 	var hall_sign := Label3D.new()
-	hall_sign.text = "THE HALL
-PULL BOTH LEVERS ($500 each)"
+	hall_sign.text = "THE HALL\nPULL BOTH LEVERS ($%d each)" % GameConfig.LEVER_COST_STAGE2
 	hall_sign.font_size = 56
 	hall_sign.pixel_size = 0.008
 	hall_sign.outline_size = 12
@@ -623,6 +622,7 @@ func _build_annex(root: Node3D) -> void:
 	_interactable(its, "Medkit", 4, Vector3(34.9, 0, 6.6), -90.0, 0)
 	_interactable(its, "HallLever1", 5, Vector3(35.73, 0, -6.8), -90.0, 0)
 	_interactable(its, "HallLever2", 6, Vector3(35.73, 0, 3.4), -90.0, 1)
+	_build_wall_buys(its)
 
 	# wall vents the crawlers climb out of: local +Z points into the room; meta "stage" says which room must be open
 	var vents := Node3D.new()
@@ -641,6 +641,139 @@ func _build_annex(root: Node3D) -> void:
 		_mesh_box(m, "Grate", Vector3(0, 0, -0.03), Vector3(1.0, 0.7, 0.08), Color(0.08, 0.08, 0.1))
 		for j in 3:
 			_mesh_box(m, "Slat%d" % j, Vector3(0, -0.2 + j * 0.2, 0.02), Vector3(0.9, 0.04, 0.05), Color(0.25, 0.25, 0.3))
+
+
+## COD-style wall buys (one spot per item, spread over the three rooms), and the two upgrader machines.
+## Local +Z points into the room; the plaque hangs on the wall behind the node.
+const WEAPON_INDEX := {"pistol": 0, "shotgun": 1, "yank": 2, "disco": 3, "tesla": 4, "boing": 5, "assault_rifle": 6, "sniper": 7, "bat": 8, "katana": 9, "axe": 10}
+const WEAPON_NAME := {"shotgun": "SHOTGUN", "yank": "YANK GUN", "disco": "DISCO BLASTER", "tesla": "TESLA GUN", "boing": "BOING GUN", "assault_rifle": "ASSAULT RIFLE", "sniper": "SNIPER RIFLE", "bat": "BASEBALL BAT", "katana": "KATANA", "axe": "AXE"}
+
+
+func _build_wall_buys(its: Node3D) -> void:
+	# [name, id, position, yaw, weapon id]  - saloon: bat, shotgun, yank, katana; annex: disco, boing, axe; hall: rifle, tesla, sniper
+	var weapons := [
+		["WBBat", 7, Vector3(-10.93, 0, 4.2), 90.0, "bat"], ["WBShotgun", 8, Vector3(-3.5, 0, 7.93), 180.0, "shotgun"],
+		["WBYank", 9, Vector3(7.0, 0, 7.93), 180.0, "yank"], ["WBKatana", 10, Vector3(3.0, 0, -7.93), 0.0, "katana"],
+		["WBDisco", 11, Vector3(13.5, 0, -8.93), 0.0, "disco"], ["WBBoing", 12, Vector3(19.5, 0, -8.93), 0.0, "boing"],
+		["WBAxe", 13, Vector3(33.0, 0, -8.93), 0.0, "axe"],
+		["WBRifle", 14, Vector3(36.27, 0, -3.6), 90.0, "assault_rifle"], ["WBTesla", 15, Vector3(36.27, 0, 6.6), 90.0, "tesla"],
+		["WBSniper", 16, Vector3(39.5, 0, -8.93), 0.0, "sniper"],
+	]
+	for w in weapons:
+		var n := _wall_plaque(its, w[0], w[1], w[2], w[3], 4, w[4])
+		var idx: int = WEAPON_INDEX[w[4]]
+		var model := GunModels.build(idx, false)
+		var muzzle: Vector3 = model.get_meta("muzzle")
+		model.scale = Vector3.ONE * 1.3
+		model.rotation = Vector3(0, PI / 2.0, 0) # side view: barrel along the wall
+		model.position = Vector3(-muzzle.z * 0.5 * 1.3, 1.4, 0.08)
+		_own_tree(model, n)
+		_wall_label(n, "%s\n$%d" % [WEAPON_NAME[w[4]], int(GameConfig.WEAPON_PRICES[StringName(w[4])])])
+	var supports := [
+		["WBArmor", 17, Vector3(13.0, 0, 8.93), 180.0, "armor", "ARMOR VEST\n$%d" % GameConfig.ARMOR_BUY_COST],
+		["WBAdrenaline", 18, Vector3(32.5, 0, 8.93), 180.0, "adrenaline", "ADRENALINE\n$%d" % GameConfig.ADRENALINE_COST],
+		["WBSecondWind", 19, Vector3(57.0, 0, -8.93), 0.0, "second_wind", "SECOND WIND\n$%d" % GameConfig.SECOND_WIND_COST],
+	]
+	for s in supports:
+		var n := _wall_plaque(its, s[0], s[1], s[2], s[3], 5, s[4])
+		match s[4]:
+			"armor":
+				var vest := GunModels.build_vest()
+				vest.position = Vector3(0, 1.4, 0.12)
+				_own_tree(vest, n)
+			"adrenaline": # a syringe
+				_mesh_box(n, "Barrel", Vector3(0, 1.4, 0.07), Vector3(0.7, 0.14, 0.14), Color(0.85, 0.9, 0.95))
+				_mesh_box(n, "Fluid", Vector3(-0.05, 1.4, 0.07), Vector3(0.4, 0.1, 0.15), Color(0.2, 0.9, 0.35))
+				_mesh_box(n, "Needle", Vector3(0.5, 1.4, 0.07), Vector3(0.3, 0.03, 0.03), Color(0.7, 0.7, 0.75))
+				_mesh_box(n, "Plunger", Vector3(-0.42, 1.4, 0.07), Vector3(0.06, 0.28, 0.28), Color(0.3, 0.3, 0.35))
+			_: # second wind: a heart
+				_mesh_box(n, "HeartA", Vector3(-0.1, 1.5, 0.07), Vector3(0.28, 0.28, 0.1), Color(0.9, 0.15, 0.3))
+				_mesh_box(n, "HeartB", Vector3(0.1, 1.5, 0.07), Vector3(0.28, 0.28, 0.1), Color(0.9, 0.15, 0.3))
+				_mesh_box(n, "HeartC", Vector3(0, 1.3, 0.07), Vector3(0.32, 0.32, 0.1), Color(0.9, 0.15, 0.3)).rotation_degrees = Vector3(0, 0, 45)
+		_wall_label(n, s[5])
+	# the machines: solid cabinets against the wall; you stand in front of them
+	_machine(its, "WeaponUpgrader", 20, Vector3(12.6, 0, -5.5), 90.0, 6, Color(0.5, 0.2, 0.7), "WEAPON UPGRADER", -1)
+	_machine(its, "ArmorUpgrader", 21, Vector3(37.4, 0, -7.0), 90.0, 7, Color(0.2, 0.4, 0.75), "ARMOR UPGRADER", -2)
+
+
+func _wall_plaque(parent: Node, nm: String, id: int, pos: Vector3, yaw_deg: float, kind: int, item: String) -> Node3D:
+	var n := Node3D.new()
+	n.set_script(_script("res://scripts/world/interactable.gd"))
+	_add(parent, n, nm)
+	n.position = pos
+	n.rotation_degrees = Vector3(0, yaw_deg, 0)
+	n.set("kind", kind)
+	n.set("index", id)
+	n.set("item", StringName(item))
+	_mesh_box(n, "Frame", Vector3(0, 1.4, -0.05), Vector3(1.7, 1.15, 0.04), Color(0.72, 0.55, 0.2))
+	_mesh_box(n, "Plaque", Vector3(0, 1.4, -0.02), Vector3(1.55, 1.0, 0.04), Color(0.78, 0.7, 0.55))
+	return n
+
+
+func _wall_label(n: Node3D, text: String) -> void:
+	var t := Label3D.new()
+	t.text = text
+	t.font_size = 32
+	t.pixel_size = 0.005
+	t.outline_size = 10
+	t.modulate = Color(0.96, 0.73, 0.26)
+	_add(n, t, "Label")
+	t.position = Vector3(0, 2.2, 0.04)
+
+
+func _machine(parent: Node, nm: String, id: int, pos: Vector3, yaw_deg: float, kind: int, color: Color, title: String, model_idx: int) -> void:
+	var n := Node3D.new()
+	n.set_script(_script("res://scripts/world/interactable.gd"))
+	_add(parent, n, nm)
+	n.position = pos
+	n.rotation_degrees = Vector3(0, yaw_deg, 0)
+	n.set("kind", kind)
+	n.set("index", id)
+	# solid body against the wall (under Nav, so zombies path around it)
+	var yaw := deg_to_rad(yaw_deg)
+	var back := Vector3(sin(yaw), 0, cos(yaw)) * -0.65
+	var body := _solid_box(_root.get_node("Nav"), nm + "Body", pos + back + Vector3(0, 1.0, 0), Vector3(1.3, 2.0, 0.7), color.darkened(0.3))
+	body.rotation_degrees = Vector3(0, yaw_deg, 0)
+	_mesh_box(n, "Glow", Vector3(0, 1.2, -0.28), Vector3(1.0, 0.5, 0.04), color.lightened(0.5))
+	_mesh_box(n, "Slot", Vector3(0, 0.75, -0.28), Vector3(0.7, 0.12, 0.05), Color(0.05, 0.05, 0.07))
+	_mesh_box(n, "Lamp", Vector3(0, 2.05, -0.3), Vector3(0.5, 0.12, 0.1), Color(1.0, 0.9, 0.4))
+	var icon: Node3D = GunModels.build_vest() if model_idx == -2 else GunModels.build(10, false) # an axe on the weapon machine, a vest on the armor one
+	icon.rotation = Vector3(0, PI / 2.0, 0) if model_idx != -2 else Vector3.ZERO
+	icon.scale = Vector3.ONE * 0.6
+	icon.position = Vector3(0.0 if model_idx == -2 else 0.45, 1.25, -0.25)
+	_own_tree(icon, n)
+	var tag := Label3D.new()
+	tag.text = title
+	tag.font_size = 34
+	tag.pixel_size = 0.005
+	tag.outline_size = 10
+	tag.modulate = Color(0.96, 0.73, 0.26)
+	tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_add(n, tag, "Tag")
+	tag.position = Vector3(0, 2.6, -0.2)
+	var status := Label3D.new() # who has what inside, and the countdown (see Interactable._animate)
+	status.font_size = 30
+	status.pixel_size = 0.005
+	status.outline_size = 8
+	status.modulate = Color(0.6, 1.0, 0.7)
+	status.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	status.visible = false
+	_add(n, status, "Status")
+	status.position = Vector3(0, 2.2, -0.2)
+
+
+## A node built in code with children: give the whole subtree an owner so it is saved into the scene.
+func _own_tree(node: Node, parent: Node) -> void:
+	parent.add_child(node)
+	node.owner = _root
+	for c in node.get_children():
+		_own_children(c)
+
+
+func _own_children(node: Node) -> void:
+	node.owner = _root
+	for c in node.get_children():
+		_own_children(c)
 
 
 ## kind: 0 lever, 1 mystery box, 2/3 shops are numbered by `id` here: 0,1 levers, 2 box, 3 bandages, 4 medkit.
@@ -672,7 +805,7 @@ func _interactable(parent: Node, nm: String, id: int, pos: Vector3, yaw_deg: flo
 			ball.material_override = _mat(Color(0.85, 0.12, 0.1))
 			_add(pivot, ball, "Knob")
 			ball.position = Vector3(0, 0.68, 0)
-			title = "LEVER $250" if id < 5 else "HALL LEVER $500"
+			title = "LEVER $%d" % GameConfig.LEVER_COST if id < 5 else "HALL LEVER $%d" % GameConfig.LEVER_COST_STAGE2
 		2: # chest: body + hinged lid + a label that shows what you got
 			_mesh_box(n, "Body", Vector3(0, 0.3, -0.6), Vector3(1.4, 0.6, 0.7), Color(0.4, 0.26, 0.12))
 			_mesh_box(n, "Band", Vector3(0, 0.3, -0.24), Vector3(1.42, 0.62, 0.04), Color(0.95, 0.8, 0.15))
@@ -690,13 +823,13 @@ func _interactable(parent: Node, nm: String, id: int, pos: Vector3, yaw_deg: flo
 			rev.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 			_add(n, rev, "Reveal")
 			rev.position = Vector3(0, 1.9, -0.6)
-			title = "MYSTERY BOX $400"
+			title = "MYSTERY BOX $%d" % GameConfig.BOX_COST
 		3, 4: # cabinet front with a cross
 			var col := Color(0.2, 0.75, 0.3) if id == 3 else Color(0.85, 0.1, 0.1)
 			var zf := -0.19 if id == 3 else -0.29
 			_mesh_box(n, "CrossH", Vector3(0, 0.8, zf), Vector3(0.5, 0.14, 0.03), col)
 			_mesh_box(n, "CrossV", Vector3(0, 0.8, zf), Vector3(0.14, 0.5, 0.03), col)
-			title = "BANDAGES $75" if id == 3 else "MEDKIT $250"
+			title = "BANDAGES $%d" % GameConfig.BANDAGE_COST if id == 3 else "MEDKIT $%d" % GameConfig.MEDKIT_COST
 	var tag := Label3D.new()
 	tag.text = title
 	tag.font_size = 48

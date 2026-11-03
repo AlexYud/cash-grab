@@ -27,23 +27,23 @@ properties/4/path = NodePath(".:hp")
 properties/4/spawn = true
 properties/4/replication_mode = 1
 
-[node name="Zombie" type="CharacterBody3D" unique_id=315542473]
+[node name="Zombie" type="CharacterBody3D" unique_id=996672904]
 script = ExtResource("1_6r4v5")
 
-[node name="Collision" type="CollisionShape3D" parent="." unique_id=1172918282]
+[node name="Collision" type="CollisionShape3D" parent="." unique_id=1910764466]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.85, 0)
 shape = SubResource("CapsuleShape3D_e47ca")
 
-[node name="FallenShape" type="CollisionShape3D" parent="." unique_id=1428561972]
+[node name="FallenShape" type="CollisionShape3D" parent="." unique_id=379645923]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.2, 0)
 shape = SubResource("BoxShape3D_bmpm8")
 disabled = true
 
-[node name="Visual" type="Node3D" parent="." unique_id=1858592092]
+[node name="Visual" type="Node3D" parent="." unique_id=1887370519]
 script = ExtResource("2_teo3y")
 
-[node name="Agent" type="NavigationAgent3D" parent="." unique_id=724387216]
+[node name="Agent" type="NavigationAgent3D" parent="." unique_id=523841813]
 
-[node name="Sync" type="MultiplayerSynchronizer" parent="." unique_id=2080320273]
+[node name="Sync" type="MultiplayerSynchronizer" parent="." unique_id=282927252]
 replication_interval = 0.05
 replication_config = SubResource("SceneReplicationConfig_14mb5")

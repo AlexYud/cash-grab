@@ -223,7 +223,7 @@ var _next_snack := 1
 
 
 ## Host: called when a zombie dies. Chance depends on the kind (Brutes drop one almost always).
-func srv_try_snack(pos: Vector3, zombie_kind: int) -> void:
+func srv_try_snack(pos: Vector3, zombie_kind: int, force: bool = false) -> void:
 	if not multiplayer.is_server():
 		return
 	var chance := GameConfig.SNACK_CHANCE
@@ -239,7 +239,7 @@ func srv_try_snack(pos: Vector3, zombie_kind: int) -> void:
 		chance = GameConfig.SNACK_CHANCE_CRAWLER
 	if Net.debug_snack_chance >= 0.0:
 		chance = Net.debug_snack_chance
-	if randf() >= chance:
+	if randf() >= chance and not force:
 		return
 	var id := _next_snack
 	_next_snack += 1

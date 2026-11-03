@@ -1,5 +1,5 @@
 extends BotScenario
-## M9 client: presses ready, sees its own cards, picks one, checks the replicated ready list, and spectates.
+## M9 client: presses ready, buys a weapon off the wall, sees its own upgrade cards (and nobody else's), spectates.
 
 
 func run() -> void:
@@ -15,19 +15,25 @@ func run() -> void:
 	var started := await wait_until(func() -> bool: return wm.state == WaveManager.State.ACTIVE, 6.0)
 	report("A: the wave started on the client too", started)
 
-	await wait_signal("B_cards", 120.0)
-	var got := await wait_until(func() -> bool: return wm.my_offers.size() == 3, 3.0)
-	report("B: the client got its own three cards", got, "n=%d" % wm.my_offers.size())
-	var opened := await wait_until(func() -> bool: return main.cards.visible and Net.ui_blocking, 5.0)
-	report("B: ...and the card screen opened for it after a moment", opened)
-	await wait_signal("B_picked", 30.0)
-	wm.request_pick(1)
-	await wait(0.6)
-	report("B: the client's cards go away after picking", wm.my_offers.is_empty() and not main.cards.visible)
-	signal_peers("B_client_picked")
-
+	await wait_signal("B_ready_check", 120.0)
+	report("B: the client got no reward cards either", wm.my_offers.is_empty() and not main.cards.visible)
 	await wait_signal("READY2", 30.0)
 	wm.press_ready(true)
+
+	await wait_signal("W_done", 120.0)
+	var host_p := other_player()
+	report("W: the client sees what the host bought on the wall", host_p.weapons.owned.count(true) >= 2 and host_p.armor >= 0)
+
+	await wait_signal("U_inside", 120.0)
+	var mach := Interactable.find_by_index(get_tree(), 20)
+	var shown := await wait_until(func() -> bool: return mach._slot_view.has(1) and mach._status.visible and mach._status.text.contains("Shotgun"), 3.0)
+	report("U: the client sees whose weapon is inside the machine, on its sign", shown, mach._status.text)
+	await wait_signal("U_cards", 120.0)
+	report("U: the host's upgrade cards did not show up here", wm.my_offers.is_empty() and not main.cards.visible)
+	await wait_signal("G_cards", 120.0)
+	report("G: ...nor the gear cards", wm.my_offers.is_empty())
+	await wait_signal("G_done", 120.0)
+
 	await wait_signal("READY3", 120.0)
 	wm.press_ready(true)
 

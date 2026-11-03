@@ -131,8 +131,15 @@ const HUGGER_SLOW := 0.4 ## the hugged player's movement multiplier
 const TRIP_CHANCE := 0.7 ## when passing over junk on the ground or over a fallen zombie
 const TRIP_COOLDOWN := 5.0
 const TRIP_RANDOM_PER_SEC := 0.03 ## plain stumbling for no reason
-const FALL_MIN := 1.5
-const FALL_MAX := 2.6
+const FALL_MIN := 1.9 ## a limp zombie lies there for about two seconds, then gets up
+const FALL_MAX := 2.1
+const FALL_SLIDE_DECAY := 6.0 ## a limp body slides much farther than a walking one is pushed (m/s^2)
+const CLUMSY_HIT_CHANCE := 0.35 ## an attacking zombie's wild swing catches a neighbour standing in front of it
+const CLUMSY_TRIP_CHANCE := 0.5 ## ...who then goes limp instead of just reeling
+const CLUMSY_SELF_TRIP := 0.07 ## ...and now and then the swing throws the attacker off balance too
+const BRUTE_THROW_SPEED := 8.5 ## the giant flings anything it walks into
+const BRUTE_THROW_LIFT := 4.5
+const BRUTE_PLOW_RADIUS := 1.5
 const GETUP_TIME := 0.8
 
 # --- Snacks: rare healing drops ---
@@ -175,22 +182,25 @@ const STUMBLE_STAGGER := 1.0
 const STUMBLE_COOLDOWN := 2.5
 
 # --- Shared cash: one pot for the whole team ---
-const CASH_KILL := 10
-const CASH_KILL_SPECIAL := 25
-const CASH_HEADSHOT_BONUS := 5
-const CASH_PER_BOARD := 5
+const CASH_KILL := 20
+const CASH_KILL_SPECIAL := 50
+const CASH_HEADSHOT_BONUS := 10
+const CASH_PER_BOARD := 10
+## Clearing a wave pays a bonus that grows with the wave, so even a quiet round affords at least one purchase.
+const CASH_WAVE_CLEAR_BASE := 100
+const CASH_WAVE_CLEAR_STEP := 40
 
 # --- The annex (levers, door, shops) ---
-const LEVER_COST := 250
+const LEVER_COST := 150
 const LEVER_HOLD := 1.5
 const LEVER_CANCEL_HOLD := 0.5 ## hold time to put a latched lever back
 const LEVER_WINDOW := 20.0 ## after the first lever is pulled, this long to pull the other one (else refunded)
 const DOOR_TIME := 4.0
-const BOX_COST := 400
+const BOX_COST := 250
 const BOX_HOLD := 1.0
-const BANDAGE_COST := 75
+const BANDAGE_COST := 50
 const BANDAGE_HEAL := 25
-const MEDKIT_COST := 250
+const MEDKIT_COST := 150
 const SHOP_HOLD := 0.8
 const SHOP_COOLDOWN := 30.0
 
@@ -199,7 +209,7 @@ const TESLA_RANGE := 5.5
 const TESLA_FALLOFF: Array[float] = [0.6, 0.4, 0.25] ## damage fraction on each chained zombie
 
 # --- Part 3 (the hall), crawlers, support items, rewards ---
-const LEVER_COST_STAGE2 := 500 ## the second pair of levers costs more
+const LEVER_COST_STAGE2 := 300## the second pair of levers costs more
 const CRAWLER_HP := 90
 const CRAWLER_SPEED := 2.9
 const CRAWLER_DAMAGE := 14
@@ -233,3 +243,17 @@ static func wave_cfg(n: int) -> Dictionary:
 			cfg[k] = int(cfg[k]) + (extra + 1) / 2
 	cfg["crawlers"] = 0 if n < 4 else 1 + (n - 4) / 2
 	return cfg
+
+
+# --- Wall buys (COD style: one spot per item, spread over the rooms) and the upgrader machines ---
+const WEAPON_PRICES := {&"bat": 100, &"yank": 150, &"shotgun": 200, &"boing": 250, &"katana": 250, &"disco": 300, &"axe": 300,
+		&"assault_rifle": 400, &"sniper": 450, &"tesla": 500}
+const ARMOR_BUY_COST := 300
+const ADRENALINE_COST := 200
+const SECOND_WIND_COST := 500
+const UPGRADE_BASE := 300## weapon upgrader: base price, plus UPGRADE_STEP for every upgrade that weapon already has
+const UPGRADE_STEP := 150
+const GEAR_BASE := 250## armor upgrader
+const GEAR_STEP := 125
+const UPGRADE_HOLD := 0.6
+const UPGRADE_TIME := 5.0 ## seconds a weapon or gear spends in an upgrader machine

@@ -125,3 +125,16 @@ static func _box(parent: Node3D, size: Vector3, pos: Vector3, color: Color) -> v
 	mi.position = pos
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	parent.add_child(mi)
+
+
+## A body armor vest, for the armor upgrader's cards (and the machine's sign).
+static func build_vest() -> Node3D:
+	var g := Node3D.new()
+	g.name = "Vest"
+	_box(g, Vector3(0.5, 0.6, 0.22), Vector3(0, 0, 0), Color(0.22, 0.3, 0.42))
+	_box(g, Vector3(0.14, 0.1, 0.24), Vector3(-0.17, 0.3, 0), Color(0.22, 0.3, 0.42))
+	_box(g, Vector3(0.14, 0.1, 0.24), Vector3(0.17, 0.3, 0), Color(0.22, 0.3, 0.42))
+	_box(g, Vector3(0.38, 0.2, 0.02), Vector3(0, 0.05, 0.12), Color(0.8, 0.75, 0.3))
+	_box(g, Vector3(0.52, 0.06, 0.24), Vector3(0, -0.2, 0), Color(0.12, 0.12, 0.14))
+	g.set_meta("muzzle", Vector3(0, 0, -0.1))
+	return g

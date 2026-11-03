@@ -15,7 +15,8 @@ var _next_report := REPORT_EVERY
 var _t := 0.0
 var _break_t := 0.0
 var _picked := false
-var _long_gun := 0 ## the ranged weapon this wave (pistol, assault rifle or sniper: whatever the cards gave us)
+var _long_gun := 0 ## the ranged weapon this wave (pistol, assault rifle or sniper: whatever the upgrades left us)
+var _dealt := false ## host: this break's upgrade cards were handed out
 
 
 func run() -> void:
@@ -41,7 +42,7 @@ func run() -> void:
 	finish()
 
 
-## The real UI path without the clicks: take a card, then press ready, like a player would.
+## The real UI path without the clicks: take an upgrade card if one is waiting, then press ready, like a player would.
 func _between_waves() -> void:
 	var wm := wave_manager()
 	if wm.state != WaveManager.State.BREAK:
@@ -111,6 +112,13 @@ func _act() -> void:
 
 func _host_watch() -> void:
 	var wm := wave_manager()
+	if wm.state == WaveManager.State.BREAK and wm.wave >= 1 and not _dealt: # stand-in for the upgrader machines: everyone gets cash and a hand of upgrade cards
+		_dealt = true
+		wm.srv_add_cash(4000)
+		for p in Net.all_players():
+			wm.srv_open_collect(p, wm.wave % 2 == 0, p.weapons.current, -1) # (no machine: nothing to give back)
+	elif wm.state != WaveManager.State.BREAK:
+		_dealt = false
 	# the run opens the annex from wave 3 and the hall from wave 5, so their windows (and the crawler vents) get used
 	for stage in [1, 2]:
 		var annex := Annex.find_stage(get_tree(), stage)

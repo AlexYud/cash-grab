@@ -1,90 +1,74 @@
 class_name WeaponCards
 extends RefCounted
-## The between-rounds reward cards: what a card can be, how it reads, and how the host rolls three of them for a
-## player. A card is {"w": weapon index, "mod": ""} for a weapon the player does not have yet ("" = the weapon itself),
-## or {"w": index, "mod": key} for a buff to a weapon they already own.
+## The upgrade cards the weapon upgrader deals: three different additions for the weapon in your hands. Upgrades never
+## run out: new special EFFECTS come first (every weapon can learn all of them once); when fewer than three are left
+## the rest of the hand is filled with buffs - another level of an effect you own, or a plain stat boost.
+## A card is {"w": weapon index, "mod": key, "lvl": the level it would reach}.
 
 const OFFER_COUNT := 3
 
-## Buffs. "stat" ones can stack high, "fx" ones are special effects with a few levels. ranged/melee say where they apply.
+## kind "fx" = a special effect, "stat" = a plain number. ranged / melee: where it can appear.
 const MODS := {
-	&"dmg": {"name": "Heavy Hitter", "desc": "+20% damage", "max": 5, "ranged": true, "melee": true},
-	&"mag": {"name": "Extended Mag", "desc": "+30% magazine size", "max": 4, "ranged": true, "melee": false},
-	&"rate": {"name": "Hair Trigger", "desc": "Fires and swings 12% faster", "max": 4, "ranged": true, "melee": true},
-	&"knock": {"name": "Heavy Rounds", "desc": "+35% knockback and flinch", "max": 4, "ranged": true, "melee": true},
-	&"bleed": {"name": "Bleeding", "desc": "Hits make zombies bleed: 6 damage per second per level for 4 seconds", "max": 3, "ranged": true, "melee": true},
-	&"life": {"name": "Vampiric", "desc": "You heal 6% of the damage you deal, per level", "max": 3, "ranged": true, "melee": true},
-	&"freeze": {"name": "Frostbite", "desc": "Hits freeze zombies: 25% slower per level for 2.5 seconds", "max": 3, "ranged": true, "melee": true},
-	&"spark": {"name": "Static Spark", "desc": "20% chance per level that a hit arcs lightning to 2 more zombies", "max": 3, "ranged": true, "melee": true},
-	&"blast": {"name": "Boom Rounds", "desc": "15% chance per level that a hit bursts: area damage and a big shove", "max": 3, "ranged": true, "melee": true},
-	&"boing": {"name": "Springy", "desc": "15% chance per level to boing the zombie into the air", "max": 3, "ranged": true, "melee": true},
-	&"disco": {"name": "Disco Fever", "desc": "15% chance per level to make the zombie dance for 3 seconds", "max": 3, "ranged": true, "melee": true},
-}
-
-const BLURBS := {
-	&"pistol": "Reliable, never runs dry. Good with every buff.",
-	&"shotgun": "Nine pellets of point-blank trouble.",
-	&"yank": "Reels zombies (and friends) in by the collar.",
-	&"disco": "Makes zombies dance instead of bite.",
-	&"tesla": "Lightning that jumps to three more zombies.",
-	&"boing": "Sends everything it hits skyward.",
-	&"assault_rifle": "Hold the trigger: 30 rounds of fast automatic fire.",
-	&"sniper": "One huge shot. Aim down the sights and go for heads.",
-	&"bat": "Huge knockback. Sometimes just flattens them.",
-	&"katana": "Lightning-fast slashes that hit up to three zombies.",
-	&"axe": "Slow, brutal swing that cleaves a whole crowd.",
+	&"bleed": {"name": "Bleeding", "kind": "fx", "desc": "Hits make zombies bleed: 6 damage per second per level, 4 seconds", "ranged": true, "melee": true},
+	&"life": {"name": "Vampiric", "kind": "fx", "desc": "You heal 6% of the damage you deal, per level (up to 60%)", "ranged": true, "melee": true},
+	&"freeze": {"name": "Frostbite", "kind": "fx", "desc": "Hits freeze zombies: slower by 20% per level for 2.5 seconds", "ranged": true, "melee": true},
+	&"spark": {"name": "Static Spark", "kind": "fx", "desc": "20% chance per level that a hit arcs lightning to more zombies", "ranged": true, "melee": true},
+	&"blast": {"name": "Boom Rounds", "kind": "fx", "desc": "15% chance per level that a hit bursts: area damage and a big shove", "ranged": true, "melee": true},
+	&"boing": {"name": "Springy", "kind": "fx", "desc": "15% chance per level to boing the zombie into the air", "ranged": true, "melee": true},
+	&"disco": {"name": "Disco Fever", "kind": "fx", "desc": "15% chance per level to make the zombie dance for 3 seconds", "ranged": true, "melee": true},
+	&"ignite": {"name": "Burning", "kind": "fx", "desc": "Hits set zombies on fire: 5 damage per second per level, and the flames spread to their neighbours", "ranged": true, "melee": true},
+	&"pinata": {"name": "Pinata", "kind": "fx", "desc": "Zombies you kill may burst into snacks and cash (25% per level)", "ranged": true, "melee": true},
+	&"headhunter": {"name": "Headhunter", "kind": "fx", "desc": "Headshots do +50% more damage per level", "ranged": true, "melee": true},
+	&"vortex": {"name": "Black Hole", "kind": "fx", "desc": "12% chance per level that a hit sucks the zombies around it in", "ranged": true, "melee": true},
+	&"dmg": {"name": "Heavy Hitter", "kind": "stat", "desc": "+20% damage", "ranged": true, "melee": true},
+	&"mag": {"name": "Extended Mag", "kind": "stat", "desc": "+30% magazine size", "ranged": true, "melee": false},
+	&"rate": {"name": "Hair Trigger", "kind": "stat", "desc": "Fires and swings 12% faster", "ranged": true, "melee": true},
+	&"knock": {"name": "Heavy Hits", "kind": "stat", "desc": "+35% knockback and flinch", "ranged": true, "melee": true},
 }
 
 
-## Three different weapons, random per player: ones they lack are offered as the weapon itself, ones they own as a buff.
-static func roll(weapons: PlayerWeapons) -> Array:
-	var pool: Array[int] = []
-	for i in weapons.list.size():
-		pool.append(i)
-	pool.shuffle()
-	var out: Array = []
-	for i in mini(OFFER_COUNT, pool.size()):
-		var idx: int = pool[i]
-		if not weapons.owned[idx]:
-			out.append({"w": idx, "mod": ""})
+static func applies(key: StringName, melee: bool) -> bool:
+	return MODS[key]["melee" if melee else "ranged"]
+
+
+## Three different cards for weapon `idx`: unlearned effects first, then buffs.
+static func roll_upgrade(weapons: PlayerWeapons, idx: int) -> Array:
+	var melee := weapons.list[idx].melee
+	var fresh: Array[StringName] = []
+	var buffs: Array[StringName] = []
+	for k in MODS:
+		if not applies(k, melee):
+			continue
+		if MODS[k]["kind"] == "fx" and weapons.mod_level(idx, k) == 0:
+			fresh.append(k)
 		else:
-			out.append({"w": idx, "mod": String(_pick_mod(weapons, idx))})
+			buffs.append(k) # a level of an effect you own, or a stat
+	fresh.shuffle()
+	buffs.shuffle()
+	var picks: Array[StringName] = []
+	for k in fresh:
+		if picks.size() < OFFER_COUNT:
+			picks.append(k)
+	for k in buffs:
+		if picks.size() < OFFER_COUNT:
+			picks.append(k)
+	var out: Array = []
+	for k in picks:
+		out.append({"w": idx, "mod": String(k), "lvl": weapons.mod_level(idx, k) + 1})
 	return out
 
 
-static func _pick_mod(weapons: PlayerWeapons, idx: int) -> StringName:
-	var melee := weapons.list[idx].melee
-	var options: Array[StringName] = []
-	for k in MODS:
-		var m: Dictionary = MODS[k]
-		if not (m["melee"] if melee else m["ranged"]):
-			continue
-		if weapons.mod_level(idx, k) < int(m["max"]):
-			options.append(k)
-	if options.is_empty():
-		return &"dmg"
-	return options.pick_random()
+static func title(card: Dictionary) -> String:
+	return String(MODS[StringName(card["mod"])]["name"])
 
 
-static func is_new(offer: Dictionary) -> bool:
-	return String(offer["mod"]) == ""
+static func tag(card: Dictionary) -> String:
+	var fx: bool = MODS[StringName(card["mod"])]["kind"] == "fx"
+	var lvl := int(card["lvl"])
+	if fx and lvl == 1:
+		return "NEW EFFECT"
+	return ("EFFECT  lvl %d" if fx else "BUFF  lvl %d") % lvl
 
 
-static func title(offer: Dictionary, weapons: PlayerWeapons) -> String:
-	var wname: String = weapons.list[int(offer["w"])].display_name
-	if is_new(offer):
-		return wname
-	return "%s: %s" % [wname, MODS[StringName(offer["mod"])]["name"]]
-
-
-static func tag(offer: Dictionary, weapons: PlayerWeapons) -> String:
-	if is_new(offer):
-		return "NEW WEAPON"
-	var lvl := weapons.mod_level(int(offer["w"]), StringName(offer["mod"])) + 1
-	return "UPGRADE  lvl %d" % lvl
-
-
-static func description(offer: Dictionary, weapons: PlayerWeapons) -> String:
-	if is_new(offer):
-		return String(BLURBS.get(weapons.list[int(offer["w"])].id, ""))
-	return String(MODS[StringName(offer["mod"])]["desc"])
+static func description(card: Dictionary) -> String:
+	return String(MODS[StringName(card["mod"])]["desc"])

@@ -44,6 +44,12 @@ var hugged := 0 ## how many Huggers are clinging to me (slows me down)
 var armor := 0 ## soaks up part of every hit until it is used up
 var boost_left := 0.0 ## adrenaline: seconds of extra speed left
 var second_wind := false ## a one-time self-revive instead of going down
+var gear_levels := PackedInt32Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]) ## armor upgrader levels, in the order of ArmorCards.KEYS (replicated)
+var _rage_left := 0.0
+var gear_away := false ## the gear is in an armor upgrader machine: its effects and armor points are off until it comes back
+var _parked_armor := 0
+var _aura_t := 0.0
+var _mend_acc := 0.0
 
 # --- host-only bookkeeping ---
 var interact_kind: int = Interact.NONE
@@ -64,6 +70,8 @@ var recoil := 0.0 ## radians of camera kick, decays
 var cam_roll := 0.0
 var shake := 0.0
 var damage_flash := 0.0
+var _fov_cur := 78.0
+var fov_kick := 0.0 ## degrees the field of view is punched in for a moment (melee hits)
 var _gen_hold := 0.0 ## local progress of holding E on an Interactable (the host times it separately)
 var _gen_done := false
 var _gen_target := 0
@@ -400,7 +408,9 @@ func _update_local_camera(delta: float) -> void:
 	head.global_basis = Basis.from_euler(Vector3(pitch + recoil, yaw, cam_roll))
 	var ads_fov := weapons.list[weapons.current].ads_fov
 	var fov := (ads_fov if ads_fov > 0.0 else GameConfig.ADS_FOV) if ads else 78.0 + (4.0 if sync_flags & FLAG_SPRINT else 0.0)
-	camera.fov = lerpf(camera.fov, fov, 1.0 - exp(-6.0 * delta))
+	fov_kick = lerpf(fov_kick, 0.0, 1.0 - exp(-11.0 * delta))
+	_fov_cur = lerpf(_fov_cur, fov, 1.0 - exp(-6.0 * delta))
+	camera.fov = _fov_cur - fov_kick * 0.35
 
 
 func _update_spectator(delta: float) -> void:
@@ -812,6 +822,7 @@ func _srv_shove(origin: Vector3, dir: Vector3) -> void:
 func _srv_tick(delta: float) -> void:
 	_invuln = maxf(_invuln - delta, 0.0)
 	boost_left = maxf(boost_left - delta, 0.0)
+	_srv_tick_gear(delta)
 	if status == Status.DOWNED:
 		_srv_tick_downed(delta)
 	_srv_bowling()
@@ -845,13 +856,16 @@ func _srv_tick_downed(delta: float) -> void:
 		_srv_eliminate()
 
 
-func srv_take_damage(amount: int, _from: Vector3 = Vector3.ZERO) -> void:
+func srv_take_damage(amount: int, from: Vector3 = Vector3.ZERO) -> void:
 	if Net.debug_god:
 		return
 	if status != Status.ALIVE or _invuln > 0.0 or amount <= 0:
 		return
-	if armor > 0: # the vest takes 60% of the hit until it breaks
-		var absorbed := mini(int(round(amount * GameConfig.ARMOR_ABSORB)), armor)
+	if randf() < minf(0.08 * gear_lvl(&"ghost"), 0.6): # Slippery: the hit passes right through
+		notify("DODGED!")
+		return
+	if armor > 0: # the vest soaks up most of the hit until it breaks
+		var absorbed := mini(int(round(amount * absorb_fraction())), armor)
 		armor -= absorbed
 		amount -= absorbed
 	hp = maxi(hp - amount, 0)
@@ -859,6 +873,7 @@ func srv_take_damage(amount: int, _from: Vector3 = Vector3.ZERO) -> void:
 		_apply_hurt(maxi(amount, 1))
 	else:
 		cl_hurt.rpc_id(peer_id, maxi(amount, 1))
+	_srv_gear_reactions(from)
 	if hp == 0:
 		if second_wind:
 			second_wind = false
@@ -869,11 +884,125 @@ func srv_take_damage(amount: int, _from: Vector3 = Vector3.ZERO) -> void:
 		_srv_down()
 
 
+# --- armor upgrader gear (effects when you get hit; levels never run out) ---------------------------------------
+
+func gear_lvl(key: StringName) -> int:
+	var i := ArmorCards.KEYS.find(key)
+	return gear_levels[i] if i >= 0 and i < gear_levels.size() and not gear_away else 0
+
+
+func total_gear_levels() -> int:
+	return 0 if gear_away else gear_level_sum()
+
+
+func gear_level_sum() -> int:
+	var n := 0
+	for l in gear_levels:
+		n += l
+	return n
+
+
+## An armor upgrader machine takes your gear (and the armor points on it); give_back_gear returns them.
+func srv_hand_in_gear() -> void:
+	gear_away = true
+	_parked_armor = armor
+	armor = 0
+
+
+func srv_give_back_gear() -> void:
+	gear_away = false
+	armor = mini(_parked_armor, armor_cap())
+	_parked_armor = 0
+
+
+func armor_cap() -> int:
+	return GameConfig.ARMOR_MAX + 25 * gear_lvl(&"plate")
+
+
+func absorb_fraction() -> float:
+	return minf(GameConfig.ARMOR_ABSORB + 0.05 * gear_lvl(&"pad"), 0.9)
+
+
+func rage_mult() -> float:
+	return 1.0 + 0.3 * gear_lvl(&"rage") if _rage_left > 0.0 else 1.0
+
+
+func srv_apply_gear(key: StringName) -> void:
+	var i := ArmorCards.KEYS.find(key)
+	if i < 0:
+		return
+	var l := gear_levels.duplicate()
+	l[i] += 1
+	gear_levels = l
+	if key == &"plate":
+		armor = armor_cap()
+
+
+## Zombies hit you: thorns, bounce, lightning, dancing and rage all go off here (host).
+func _srv_gear_reactions(from: Vector3) -> void:
+	if total_gear_levels() == 0:
+		return
+	var attacker: Zombie = null
+	var best := 2.8
+	for n in get_tree().get_nodes_in_group("enemies"):
+		var z := n as Zombie
+		if z != null and not z.is_dead():
+			var d := z.global_position.distance_to(from)
+			if d < best:
+				best = d
+				attacker = z
+	var thorns := gear_lvl(&"thorns")
+	if attacker != null and thorns > 0:
+		var away := attacker.global_position - global_position
+		away.y = 0.0
+		attacker.srv_hit(12 * thorns, away.normalized() * 5.0, 0.4, self)
+	if attacker != null and not attacker.is_dead() and randf() < minf(0.25 * gear_lvl(&"springy"), 0.9):
+		attacker.srv_boing()
+	var shock := gear_lvl(&"shock")
+	var funky := gear_lvl(&"funky")
+	if shock > 0 or funky > 0:
+		var chain := PackedVector3Array([global_position + Vector3(0, 1.2, 0)])
+		for n in get_tree().get_nodes_in_group("enemies"):
+			var z := n as Zombie
+			if z == null or z.is_dead() or z.global_position.distance_to(global_position) > 4.0:
+				continue
+			if shock > 0 and chain.size() < 5:
+				chain.append(z.global_position + Vector3(0, 1.1, 0))
+				z.srv_hit(14 * shock, Vector3.ZERO, 0.3, self)
+			if funky > 0 and not z.is_dead():
+				z.srv_dance(1.5 * funky)
+		if chain.size() > 1:
+			Fx.lightning.rpc(chain)
+	if gear_lvl(&"rage") > 0:
+		_rage_left = 4.0
+
+
+## Host, every tick: the Stink Cloud and Slurpee gear.
+func _srv_tick_gear(delta: float) -> void:
+	_rage_left = maxf(_rage_left - delta, 0.0)
+	var mend := gear_lvl(&"mend")
+	if mend > 0 and status == Status.ALIVE and hp < GameConfig.PLAYER_MAX_HP:
+		_mend_acc += 0.5 * mend * delta
+		if _mend_acc >= 1.0:
+			var whole := int(_mend_acc)
+			_mend_acc -= whole
+			hp = mini(hp + whole, GameConfig.PLAYER_MAX_HP)
+	var stink := gear_lvl(&"stink")
+	if stink > 0 and status == Status.ALIVE:
+		_aura_t -= delta
+		if _aura_t <= 0.0:
+			_aura_t = 0.4
+			for n in get_tree().get_nodes_in_group("enemies"):
+				var z := n as Zombie
+				if z != null and not z.is_dead() and z.global_position.distance_to(global_position) < 3.2:
+					z.srv_freeze(maxf(1.0 - 0.12 * stink, 0.4), 0.7)
+
+
 ## Support items (shop / mystery box). They return false when they would do nothing.
 func srv_add_armor(n: int) -> bool:
-	if status != Status.ALIVE or armor >= GameConfig.ARMOR_MAX:
+	if status != Status.ALIVE or armor >= armor_cap():
 		return false
-	armor = mini(armor + n, GameConfig.ARMOR_MAX)
+	armor = mini(armor + n, armor_cap())
 	return true
 
 
@@ -886,6 +1015,10 @@ func srv_reset_support() -> void:
 	armor = 0
 	boost_left = 0.0
 	second_wind = false
+	gear_levels = PackedInt32Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+	_rage_left = 0.0
+	gear_away = false
+	_parked_armor = 0
 
 
 func _srv_down() -> void:
@@ -951,6 +1084,13 @@ func _notify_status() -> void:
 
 
 func srv_launch(vel: Vector3, stagger: float, _hard: bool = false) -> void: # _hard is ignored: players never ragdoll, they just get knocked back
+	var anchor := gear_lvl(&"anchor") # Lead Boots: each level takes 40% off, level 3 ignores it
+	if anchor > 0:
+		var keep := maxf(1.0 - 0.4 * anchor, 0.0)
+		if keep <= 0.0:
+			return
+		vel *= keep
+		stagger *= keep
 	if peer_id == 1:
 		_apply_launch(vel, stagger)
 	else:

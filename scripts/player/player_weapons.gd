@@ -29,7 +29,6 @@ var _guns: Array[Node3D] = []
 var _muzzles: Array[Marker3D] = []
 var _kick := 0.0
 var _shove_anim := 0.0
-var _swing_anim := 0.0 ## melee swing, 1 -> 0
 var _vm_bob := 0.0
 var _ads := 0.0
 
@@ -61,7 +60,7 @@ func mag_size_of(idx: int) -> int:
 
 
 func interval_of(idx: int) -> float:
-	return list[idx].fire_interval * pow(0.88, mod_level(idx, &"rate"))
+	return list[idx].fire_interval * maxf(pow(0.88, mod_level(idx, &"rate")), 0.3)
 
 
 func knock_mult(idx: int) -> float:
@@ -139,6 +138,9 @@ func tick(delta: float, inp: PlayerInputState) -> void:
 			_refresh_viewmodel()
 	if inp.reload:
 		_begin_reload()
+	if not owned[current]: # the weapon is in an upgrader machine: empty hands
+		_buffered = 0.0
+		return
 	if inp.fire_pressed or (inp.fire_held and list[current].auto):
 		_buffered = 0.18
 	if _buffered > 0.0 and _cooldown <= 0.0 and _reload_left <= 0.0 and _switch_left <= 0.0:
@@ -237,11 +239,121 @@ func _fire() -> void:
 			srv_hits.rpc_id(1, current, origin, agg.values())
 
 
-## Melee: no ammo, hits the closest few zombies in a cone in front. Reuses the gun hit pipeline (the host validates).
+# --- melee: wind-up, strike, follow-through ------------------------------------------------------------------
+# Each weapon has a chain of swings (a combo). A swing is a list of keyframes [time 0..1, position offset, rotation
+# offset in radians] applied on top of the resting view model, and `hit` says when in the swing the blow lands.
+# rotation.x > 0 lifts the tip, rotation.y > 0 swings it to the left, rotation.z rolls the blade.
+
+const SWINGS := {
+	&"bat": [
+		{"dur": 0.55, "hit": 0.5, "keys": [
+			[0.0, Vector3(0, 0, 0), Vector3(0, 0, 0)],
+			[0.34, Vector3(0.16, 0.06, 0.04), Vector3(0.4, -1.0, -0.5)],
+			[0.5, Vector3(-0.02, 0.0, -0.06), Vector3(0.0, 0.1, 0.1)],
+			[0.64, Vector3(-0.3, -0.06, -0.2), Vector3(-0.25, 1.3, 0.55)],
+			[1.0, Vector3(0, 0, 0), Vector3(0, 0, 0)]]},
+	],
+	&"katana": [
+		{"dur": 0.38, "hit": 0.45, "keys": [ # right to left, slightly downward
+			[0.0, Vector3(0, 0, 0), Vector3(0, 0, 0)],
+			[0.26, Vector3(0.2, 0.12, 0.08), Vector3(0.5, -0.9, -0.7)],
+			[0.55, Vector3(-0.26, -0.1, -0.16), Vector3(-0.4, 1.15, 0.7)],
+			[1.0, Vector3(0, 0, 0), Vector3(0, 0, 0)]]},
+		{"dur": 0.38, "hit": 0.45, "keys": [ # back across, rising
+			[0.0, Vector3(0, 0, 0), Vector3(0, 0, 0)],
+			[0.26, Vector3(-0.22, -0.12, 0.05), Vector3(-0.5, 1.0, 0.9)],
+			[0.55, Vector3(0.24, 0.14, -0.16), Vector3(0.55, -1.0, -0.6)],
+			[1.0, Vector3(0, 0, 0), Vector3(0, 0, 0)]]},
+		{"dur": 0.5, "hit": 0.5, "finisher": true, "keys": [ # overhead chop
+			[0.0, Vector3(0, 0, 0), Vector3(0, 0, 0)],
+			[0.36, Vector3(0.02, 0.16, 0.0), Vector3(1.0, -0.1, 0.12)],
+			[0.58, Vector3(0.0, -0.16, -0.28), Vector3(-1.05, 0.0, 0.0)],
+			[1.0, Vector3(0, 0, 0), Vector3(0, 0, 0)]]},
+	],
+	&"axe": [
+		{"dur": 0.95, "hit": 0.55, "finisher": true, "keys": [
+			[0.0, Vector3(0, 0, 0), Vector3(0, 0, 0)],
+			[0.4, Vector3(0.03, 0.16, 0.0), Vector3(1.05, 0.0, 0.15)],
+			[0.5, Vector3(0.02, 0.15, 0.0), Vector3(1.02, 0.0, 0.14)],
+			[0.64, Vector3(0.0, -0.18, -0.3), Vector3(-1.15, 0.0, 0.0)],
+			[0.76, Vector3(0.0, -0.2, -0.26), Vector3(-1.0, 0.0, 0.0)],
+			[1.0, Vector3(0, 0, 0), Vector3(0, 0, 0)]]},
+	],
+}
+const TRAIL_COLORS := {&"bat": Color(1.0, 0.9, 0.7), &"katana": Color(0.7, 0.9, 1.0), &"axe": Color(1.0, 0.55, 0.3)}
+const COMBO_WINDOW := 0.55 ## a new swing this soon after the last one continues the combo
+
+var _swing_style: Dictionary = {}
+var _swing_t := -1.0 ## seconds into the current swing, -1 when idle
+var _swing_dur := 0.5
+var _swing_step := 0
+var _combo_left := 0.0
+var _resolve_pending := false
+var _hitstop := 0.0
+var _trail: Array = [] ## recent [base, tip, age] world positions of the blade while it cuts
+var _trail_node: MeshInstance3D
+var _trail_mesh: ImmediateMesh
+
+
+## Starts the next swing of the weapon's combo. The blow itself lands a moment later, at the strike (_melee_resolve).
 func _melee_swing() -> void:
 	var w := list[current]
+	var chain: Array = SWINGS.get(w.id, [])
 	_cooldown = interval_of(current)
-	_swing_anim = 1.0
+	if chain.is_empty():
+		_melee_resolve()
+		return
+	_swing_step = _swing_step + 1 if _combo_left > 0.0 and _swing_step + 1 < chain.size() else 0
+	_swing_style = chain[_swing_step]
+	_swing_dur = float(_swing_style["dur"]) * interval_of(current) / maxf(w.fire_interval, 0.05)
+	_combo_left = COMBO_WINDOW + _swing_dur
+	_swing_t = 0.0
+	_cooldown = maxf(interval_of(current), _swing_dur * 0.9)
+	_resolve_pending = true
+	_trail.clear()
+	Sfx.play(w.id, -4.0, randf_range(0.85, 1.1) + 0.08 * _swing_step)
+	var info := PackedByteArray([_swing_step, 1 if _swing_style.get("finisher", false) else 0])
+	fx_shot.rpc(current, PackedVector3Array(), info) # observers get the same swing
+
+
+func _melee_advance(delta: float) -> void:
+	_combo_left = maxf(_combo_left - delta, 0.0)
+	if _hitstop > 0.0:
+		_hitstop -= delta
+		return
+	if _swing_t < 0.0:
+		return
+	_swing_t += delta
+	var p := _swing_t / _swing_dur
+	var hit := float(_swing_style["hit"])
+	if _resolve_pending and p >= hit:
+		_resolve_pending = false
+		_melee_resolve()
+	if p >= hit - 0.16 and p <= hit + 0.18: # the blade leaves a glowing arc while it cuts
+		_trail_sample()
+	if _swing_t >= _swing_dur:
+		_swing_t = -1.0
+
+
+## The view model's offset for the current swing: smooth interpolation through the keyframes.
+func _swing_pose() -> Array:
+	if _swing_t < 0.0:
+		return [Vector3.ZERO, Vector3.ZERO]
+	var keys: Array = _swing_style["keys"]
+	var p := clampf(_swing_t / _swing_dur, 0.0, 1.0)
+	for i in range(1, keys.size()):
+		if p <= float(keys[i][0]):
+			var a: Array = keys[i - 1]
+			var b: Array = keys[i]
+			var u := (p - float(a[0])) / maxf(float(b[0]) - float(a[0]), 0.0001)
+			u = u * u * (3.0 - 2.0 * u)
+			return [(a[1] as Vector3).lerp(b[1], u), (a[2] as Vector3).lerp(b[2], u)]
+	return [Vector3.ZERO, Vector3.ZERO]
+
+
+## The blow lands: find the zombies in the cone, send the hits, and make it feel heavy.
+func _melee_resolve() -> void:
+	var w := list[current]
 	var origin := player.camera.global_position
 	var fwd := -Basis.from_euler(Vector3(player.pitch + player.recoil, player.yaw, 0.0)).z
 	var cos_arc := cos(deg_to_rad(w.melee_half_arc_deg))
@@ -266,16 +378,74 @@ func _melee_swing() -> void:
 		var z: Zombie = cands[i][1]
 		hits.append([Hit.ENEMY, z.net_id, 1, cands[i][2], 0])
 		Fx.impact(cands[i][2], -fwd, Fx.Impact.FLESH)
-	Sfx.play(w.id, -3.0, randf_range(0.9, 1.1))
-	fx_shot.rpc(current, PackedVector3Array(), PackedByteArray())
+		Fx.impact(cands[i][2] + Vector3(0, 0.15, 0), Vector3.UP, Fx.Impact.FLESH)
+	var big: bool = _swing_style.get("finisher", false)
+	# a little lunge into the swing, a kick of camera and field of view
+	var flat := Vector3(fwd.x, 0.0, fwd.z).normalized()
+	if player.is_on_floor() and not player.ads:
+		player.velocity += flat * (3.6 if big else 2.4)
+	player.shake = maxf(player.shake, (0.55 if big else 0.3) if not hits.is_empty() else 0.12)
+	player.recoil = minf(player.recoil + deg_to_rad(2.2 if big else 1.2), deg_to_rad(9.0))
+	player.fov_kick = 6.0 if big else 3.5
 	if not hits.is_empty():
+		_hitstop = 0.09 if big else 0.055 # the blade bites: the swing freezes for a few frames
 		hit_marker = 0.18
 		Sfx.play(&"hit_marker", -8.0)
-		Sfx.play(&"hit_flesh", -3.0, 0.8)
+		Sfx.play(&"hit_flesh", -2.0, 0.75 if big else 0.9)
+		Sfx.play(&"hit_world", -6.0, 0.5)
+		Fx.camera_shake.emit(0.5 if big else 0.28, origin + fwd * 2.0)
 		if multiplayer.is_server():
 			_srv_hits(current, origin, hits)
 		else:
 			srv_hits.rpc_id(1, current, origin, hits)
+
+
+# --- the slash trail ---------------------------------------------------------------------------------------------
+
+func _trail_sample() -> void:
+	var g := _guns[current]
+	var tip := _muzzles[current].global_position
+	var inv := player.camera.global_transform.affine_inverse() # the arc lives in the camera's space, like the weapon
+	_trail.append([inv * g.global_position.lerp(tip, 0.45), inv * tip, 0.0])
+
+
+func _trail_update(delta: float) -> void:
+	for e in _trail:
+		e[2] += delta
+	while not _trail.is_empty() and float(_trail[0][2]) > 0.22:
+		_trail.pop_front()
+	if _trail.size() < 2:
+		if _trail_mesh != null:
+			_trail_mesh.clear_surfaces()
+		return
+	if _trail_node == null or not is_instance_valid(_trail_node):
+		if Fx.world == null:
+			return
+		_trail_mesh = ImmediateMesh.new()
+		_trail_node = MeshInstance3D.new()
+		_trail_node.mesh = _trail_mesh
+		_trail_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+		var m := StandardMaterial3D.new()
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		m.vertex_color_use_as_albedo = true
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		m.cull_mode = BaseMaterial3D.CULL_DISABLED
+		m.no_depth_test = true # the arc is drawn over everything: it is a glow, not an object
+		m.render_priority = 5
+		_trail_node.material_override = m
+		player.camera.add_child(_trail_node)
+	var col: Color = TRAIL_COLORS.get(list[current].id, Color.WHITE)
+	_trail_mesh.clear_surfaces()
+	_trail_mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLE_STRIP)
+	for e in _trail:
+		var a := clampf(1.0 - float(e[2]) / 0.22, 0.0, 1.0)
+		_trail_mesh.surface_set_color(Color(col.r, col.g, col.b, 0.0))
+		_trail_mesh.surface_add_vertex(e[0])
+		_trail_mesh.surface_set_color(Color(col.r, col.g, col.b, 0.9 * a * a))
+		_trail_mesh.surface_add_vertex(e[1])
+	_trail_mesh.surface_end()
 
 
 func _spread_dir(basis: Basis, spread_deg: float) -> Vector3:
@@ -307,7 +477,7 @@ func fx_shot(weapon_idx: int, ends: PackedVector3Array, kinds: PackedByteArray) 
 	if multiplayer.get_remote_sender_id() != player.peer_id or weapon_idx < 0 or weapon_idx >= list.size():
 		return
 	if list[weapon_idx].melee: # observers just see (and hear) the swing
-		player.puppet.play_shove()
+		player.puppet.play_swing(int(kinds[0]) if kinds.size() > 0 else 0, kinds.size() > 1 and kinds[1] == 1)
 		Sfx.play_at(list[weapon_idx].id, player.global_position + Vector3.UP, -3.0)
 		return
 	var muzzle := player.puppet.muzzle_position(weapon_idx)
@@ -339,7 +509,7 @@ func _srv_hits(weapon_idx: int, origin: Vector3, hits: Array) -> void:
 	if now - _srv_last_shot < interval_of(weapon_idx) * (0.3 if w.auto else 0.6):
 		return
 	_srv_last_shot = now
-	var dm := damage_mult(weapon_idx)
+	var dm := damage_mult(weapon_idx) * player.rage_mult()
 	var km := knock_mult(weapon_idx)
 	var eye := player.global_position + Vector3(0, GameConfig.EYE_HEIGHT, 0)
 	if origin.distance_to(eye) > 4.0:
@@ -359,7 +529,7 @@ func _srv_hits(weapon_idx: int, origin: Vector3, hits: Array) -> void:
 				if z == null or z.is_dead() or z.global_position.distance_to(point) > 3.5:
 					continue
 				var heads: int = clampi(int(h[4]) if h.size() > 4 else 0, 0, pellets)
-				var dmg := int(round(w.damage_at(dist) * dm * (pellets + heads * (GameConfig.HEADSHOT_MULT - 1.0))))
+				var dmg := int(round(w.damage_at(dist) * dm * (pellets + heads * (GameConfig.HEADSHOT_MULT + 0.5 * mod_level(weapon_idx, &"headhunter") - 1.0))))
 				z.srv_hit(dmg, dir * w.enemy_knockback * km * pellets, w.enemy_stagger * km, player, heads > 0)
 				_srv_effects(z, w, weapon_idx, dmg, dir, origin)
 				if not z.is_dead():
@@ -402,34 +572,56 @@ func _srv_hits(weapon_idx: int, origin: Vector3, hits: Array) -> void:
 					b.srv_damage(int(round(w.damage_at(dist) * pellets)), player)
 
 
-## The card buffs that do something extra on a hit (host only). `dmg` is what the hit did.
+## The upgrade effects that do something extra on a hit (host only). `dmg` is what the hit did. Levels never run out,
+## so every chance is capped instead.
 func _srv_effects(z: Zombie, w: WeaponData, idx: int, dmg: int, dir: Vector3, origin: Vector3) -> void:
 	var m := mods[idx]
 	if m.is_empty():
 		return
 	var life := mod_level(idx, &"life")
 	if life > 0:
-		player.srv_heal(maxi(int(round(dmg * 0.06 * life)), 1))
+		player.srv_heal(maxi(int(round(dmg * minf(0.06 * life, 0.6))), 1))
 	if z.is_dead():
 		return
 	var bleed := mod_level(idx, &"bleed")
 	if bleed > 0:
 		z.srv_bleed(6.0 * bleed, 4.0, player)
+	var ignite := mod_level(idx, &"ignite")
+	if ignite > 0:
+		z.srv_ignite(5.0 * ignite, 5.0, player)
 	var freeze := mod_level(idx, &"freeze")
 	if freeze > 0:
-		z.srv_freeze(1.0 - 0.25 * freeze, 2.5)
-	if randf() < 0.2 * mod_level(idx, &"spark"):
-		_srv_tesla(z, w, origin, 2, 0.5)
+		z.srv_freeze(maxf(1.0 - 0.2 * freeze, 0.25), 2.5)
+	var sparks := mod_level(idx, &"spark")
+	if randf() < minf(0.2 * sparks, 0.9):
+		_srv_tesla(z, w, origin, 2 + sparks / 3, 0.5)
 	if z.is_dead():
 		return
-	if randf() < 0.15 * mod_level(idx, &"blast"):
+	if randf() < minf(0.12 * mod_level(idx, &"vortex"), 0.8):
+		_srv_vortex(z)
+	if randf() < minf(0.15 * mod_level(idx, &"blast"), 0.8):
 		_srv_blast(z, dmg, dir)
 	if z.is_dead():
 		return
-	if randf() < 0.15 * mod_level(idx, &"boing"):
+	if randf() < minf(0.15 * mod_level(idx, &"boing"), 0.8):
 		z.srv_boing()
-	elif randf() < 0.15 * mod_level(idx, &"disco"):
+	elif randf() < minf(0.15 * mod_level(idx, &"disco"), 0.8):
 		z.srv_dance(3.0)
+
+
+## "Black Hole": every zombie around the one that was hit is pulled towards it.
+func _srv_vortex(centre: Zombie) -> void:
+	Fx.explosion.rpc(centre.global_position, 2.0)
+	for n in get_tree().get_nodes_in_group("enemies"):
+		var o := n as Zombie
+		if o == null or o.is_dead() or o == centre:
+			continue
+		var d := centre.global_position - o.global_position
+		d.y = 0.0
+		if d.length() < 5.5 and d.length() > 0.2:
+			o.add_knock(d.normalized() * minf(d.length() * 2.0 + 3.0, 10.0))
+			if randf() < 0.3:
+				o.srv_trip(d.normalized() * 2.0)
 
 
 ## "Boom Rounds": a small burst around the zombie that was hit.
@@ -486,6 +678,27 @@ func give_weapon(idx: int) -> void:
 		_switch_left = list[idx].switch_time
 		_refresh_viewmodel()
 		Sfx.play(&"revive", -3.0, 1.3)
+
+
+## An upgrader machine takes the weapon out of your hands (it comes back through give_weapon). Upgrades stay on it.
+@rpc("any_peer", "call_local", "reliable")
+func take_weapon(idx: int) -> void:
+	var s := multiplayer.get_remote_sender_id()
+	if (s != 0 and s != 1) or idx < 0 or idx >= list.size():
+		return
+	owned[idx] = false
+	_reload_left = 0.0
+	if current == idx:
+		for i in list.size(): # something else to hold, the pistol first
+			if owned[i]:
+				current = i
+				break
+		_switch_left = list[current].switch_time
+	_refresh_viewmodel()
+
+
+func has_any_weapon() -> bool:
+	return owned.has(true)
 
 
 ## New run: back to just the pistol.
@@ -550,7 +763,7 @@ func _build_viewmodel() -> void:
 
 func _refresh_viewmodel() -> void:
 	for i in _guns.size():
-		_guns[i].visible = i == current
+		_guns[i].visible = i == current and owned[i]
 
 
 func _process(delta: float) -> void:
@@ -558,7 +771,8 @@ func _process(delta: float) -> void:
 		return
 	_kick = lerpf(_kick, 0.0, 1.0 - exp(-13.0 * delta))
 	_shove_anim = maxf(_shove_anim - delta, 0.0)
-	_swing_anim = maxf(_swing_anim - delta * 3.2, 0.0)
+	_melee_advance(delta)
+	_trail_update(delta)
 	var hspeed := Vector2(player.velocity.x, player.velocity.z).length()
 	_vm_bob += delta * hspeed * 1.7
 	var dip := 0.0
@@ -572,6 +786,6 @@ func _process(delta: float) -> void:
 	var bob := Vector3(cos(_vm_bob * 0.5) * 0.008, sin(_vm_bob) * 0.008, 0.0) * clampf(hspeed / 5.0, 0.0, 1.0)
 	_ads = lerpf(_ads, 1.0 if player.ads else 0.0, 1.0 - exp(-14.0 * delta))
 	_viewmodel.position = Vector3(lerpf(0.2, 0.0, _ads), lerpf(-0.23, -0.17, _ads) - dip - sw - down * 0.2, -0.36 + _kick * 0.07 - shove * 0.12) + bob * (1.0 - _ads)
-	var swing := sin(_swing_anim * PI) * (1.0 if _swing_anim > 0.5 else 0.7)
-	_viewmodel.rotation = Vector3(_kick * 0.2 - dip * 1.1 + shove * 0.5 - swing * 0.9, -swing * 0.5, -dip * 0.5 + swing * 0.7)
-	_viewmodel.position += Vector3(swing * 0.08, -swing * 0.04, -swing * 0.1)
+	var pose := _swing_pose()
+	_viewmodel.rotation = Vector3(_kick * 0.2 - dip * 1.1 + shove * 0.5, 0.0, -dip * 0.5) + (pose[1] as Vector3)
+	_viewmodel.position += (pose[0] as Vector3)

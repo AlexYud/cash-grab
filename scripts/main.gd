@@ -16,8 +16,9 @@ var pause: PauseMenu
 var end: EndScreen
 var cards: CardScreen
 var _cards_hidden := false
+var _break_panel := false ## Tab during a break with no cards: just the ready button
 var _cards_delay := 0.0 ## seconds before freshly dealt cards open (so nobody picks one with a stray click)
-const CARDS_DELAY := 2.5
+const CARDS_DELAY := 0.0 ## the upgrader machines open their cards on purpose, so no delay (the card screen itself ignores clicks for a moment)
 
 var _pause_open := false
 var _end_timer := 0.0
@@ -239,9 +240,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		wave_manager.press_ready(not wave_manager.is_ready(Net.local_player.peer_id))
 		Sfx.play(&"ready", -4.0)
 		get_viewport().set_input_as_handled()
-	elif event.is_action_pressed("cards") and Net.phase == Net.Phase.PLAYING and not _pause_open and not wave_manager.my_offers.is_empty():
+	elif event.is_action_pressed("cards") and Net.phase == Net.Phase.PLAYING and not _pause_open \
+			and (not wave_manager.my_offers.is_empty() or wave_manager.state == WaveManager.State.BREAK):
 		_cards_delay = 0.0
-		_cards_hidden = not _cards_hidden # Tab: put the cards away to walk around, bring them back to choose
+		if wave_manager.my_offers.is_empty():
+			_break_panel = not _break_panel # Tab in a break: the ready panel
+		else:
+			_cards_hidden = not _cards_hidden # Tab: put the upgrade cards away to walk around, bring them back to choose
 		_refresh_ui()
 		get_viewport().set_input_as_handled()
 	elif event is InputEventMouseButton and event.pressed and Net.phase == Net.Phase.PLAYING and not Net.ui_blocking \
@@ -295,20 +300,24 @@ func _process(delta: float) -> void:
 # --- reward cards + ready ---------------------------------------------------------------------------------
 
 func _cards_wanted() -> bool:
-	return Net.phase == Net.Phase.PLAYING and not _pause_open and not end.visible and not _cards_hidden and _cards_delay <= 0.0 \
-			and wave_manager.state == WaveManager.State.BREAK and not wave_manager.my_offers.is_empty()
+	var has_cards := not wave_manager.my_offers.is_empty()
+	var panel := _break_panel and wave_manager.state == WaveManager.State.BREAK
+	return Net.phase == Net.Phase.PLAYING and not _pause_open and not end.visible and not _cards_hidden and _cards_delay <= 0.0 and (has_cards or panel)
 
 
 func _on_offers_changed() -> void:
 	_cards_hidden = false
-	_cards_delay = CARDS_DELAY if not wave_manager.my_offers.is_empty() else 0.0 # let the kill-clicking stop first
-	if not wave_manager.my_offers.is_empty() and Net.local_player != null:
-		cards.show_offers(wave_manager.my_offers, Net.local_player.weapons)
+	_cards_delay = CARDS_DELAY if not wave_manager.my_offers.is_empty() else 0.0
+	if Net.local_player != null:
+		cards.show_offers(wave_manager.my_offers, Net.local_player.weapons) # (empty: clears the old cards)
+	if not wave_manager.my_offers.is_empty():
 		Sfx.play(&"card", -4.0)
 	_refresh_ui()
 
 
 func _update_cards() -> void:
+	if wave_manager.state != WaveManager.State.BREAK:
+		_break_panel = false
 	_cards_delay = maxf(_cards_delay - get_process_delta_time(), 0.0)
 	if cards.visible != _cards_wanted():
 		_refresh_ui()
@@ -318,4 +327,4 @@ func _update_cards() -> void:
 	for p in Net.all_players():
 		if not wave_manager.is_ready(p.peer_id):
 			waiting.append(p.player_name)
-	cards.refresh([], waiting, wave_manager.is_ready(Net.local_player.peer_id))
+	cards.refresh(waiting, wave_manager.is_ready(Net.local_player.peer_id), wave_manager.state == WaveManager.State.BREAK)

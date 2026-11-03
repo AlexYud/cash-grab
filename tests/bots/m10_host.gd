@@ -94,12 +94,22 @@ func run() -> void:
 	player.input.aim_yaw = 0.0
 	await wait(0.3)
 	player.input.fire_pressed = true
+	await wait(0.22)
+	report("K: the blade leaves a glowing trail while it cuts", player.weapons._trail.size() >= 2 and player.weapons._trail_node != null and is_instance_valid(player.weapons._trail_node), "samples=%d" % player.weapons._trail.size())
 	await wait(0.4)
 	var hit_k := 0
 	for z in kat:
 		if z.hp < 3000:
 			hit_k += 1
 	report("K: the katana cuts up to three zombies in one swing", hit_k == 3, "hit=%d of 5" % hit_k)
+	player.input.fire_pressed = true
+	await wait(0.15)
+	report("K: swinging again straight away continues the combo", player.weapons._swing_step == 1, "step=%d" % player.weapons._swing_step)
+	await wait(0.5)
+	player.input.fire_pressed = true
+	await wait(0.15)
+	report("K: ...up to an overhead finisher", player.weapons._swing_step == 2 and bool(player.weapons._swing_style.get("finisher", false)), "step=%d" % player.weapons._swing_step)
+	await wait(0.7)
 	for z in kat:
 		z.free()
 	await wait(0.3)
@@ -112,7 +122,7 @@ func run() -> void:
 	player.input.aim_yaw = 0.0
 	await wait(0.3)
 	player.input.fire_pressed = true
-	await wait(0.4)
+	await wait(0.9) # the axe winds up slowly: the blow lands about half a second in
 	var hit_x := 0
 	for z in axe:
 		if z.hp < 3000:

@@ -183,4 +183,62 @@ func run() -> void:
 			n += 1
 	report("G: corpse count is capped", n > 0 and n <= GameConfig.MAX_RAGDOLLS, "n=%d cap=%d" % [n, GameConfig.MAX_RAGDOLLS])
 	await wait(1.0)
+
+	# --- H: a fall is limp and lasts about two seconds, then the zombie gets up ---
+	var zh := _spawn(Vector3(-6.0, 0, -2.0))
+	await wait(0.6)
+	zh.srv_trip(Vector3.ZERO)
+	var t0 := Time.get_ticks_msec()
+	await wait(0.4)
+	report("H: a tripped zombie is completely limp", zh.state == Zombie.State.FALLEN and zh.puppet.is_ragdolling())
+	var rose := await wait_until(func() -> bool: return zh.state != Zombie.State.FALLEN, 4.0)
+	var lay := (Time.get_ticks_msec() - t0) / 1000.0
+	report("H: it lies there for about two seconds before it gets up", rose and lay > 1.7 and lay < 2.6, "lay=%.2f" % lay)
+	await wait(1.5)
+	report("H: ...and is back on its feet, ragdoll off", zh.state != Zombie.State.FALLEN and not zh.puppet.is_ragdolling())
+	zh.queue_free()
+
+	# --- I: the giant throws whatever it walks into ---
+	var brute := _spawn(Vector3(-6.0, 0, -2.0), Zombie.Kind.BRUTE)
+	var victim := _spawn(Vector3(-4.9, 0, -2.0))
+	await wait(0.6)
+	brute.rotation.y = -PI / 2.0 # faces +X
+	var start := victim.global_position
+	brute._plow()
+	await wait(0.2)
+	report("I: the brute's shove sends it flying limp", victim.is_fallen() and victim.puppet.is_ragdolling() and victim.velocity.y > 0.5, "vy=%.2f" % victim.velocity.y)
+	await wait(1.8)
+	var flew := victim.global_position.distance_to(start)
+	report("I: ...a long way (thrown, not nudged)", flew > 4.0, "dist=%.1f" % flew)
+	var brute_ok := not brute.is_fallen()
+	report("I: the brute itself is never knocked over", brute_ok)
+	var late := await wait_until(func() -> bool: return victim.state != Zombie.State.FALLEN, 4.0)
+	report("I: the thrown zombie gets up again", late)
+	victim.queue_free()
+	brute.queue_free()
+	await wait(0.3)
+
+	# --- J: clumsy attackers hit the neighbour in front of them, never the one behind ---
+	var atk := _spawn(Vector3(-6.0, 0, -5.0))
+	await wait(0.4)
+	atk.rotation.y = -PI / 2.0 # faces +X
+	var front: Array = []
+	for i in 10:
+		front.append(_spawn(Vector3(-5.0, 0, -5.9 + i * 0.2)))
+	var behind := _spawn(Vector3(-7.0, 0, -5.0))
+	await wait(0.5)
+	for i in 3:
+		atk._clumsy_swing()
+	await wait(0.3)
+	var hit := 0
+	for f in front:
+		if f.is_fallen() or f._stagger > 0.0 or f._knock.length() > 0.1:
+			hit += 1
+	report("J: a wild swing catches neighbours in front of the attacker", hit >= 1, "hit=%d of 10" % hit)
+	report("J: ...but not the one behind it", not behind.is_fallen() and behind._stagger <= 0.0 and behind._knock.length() < 0.1)
+	for z in front:
+		z.queue_free()
+	behind.queue_free()
+	atk.queue_free()
+	await wait(0.5)
 	finish()

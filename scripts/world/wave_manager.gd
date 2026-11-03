@@ -1,7 +1,7 @@
 class_name WaveManager
 extends Node
 ## Round flow: break -> wave (spawn budget) -> break -> ... forever, until nobody is left standing.
-## Every break the players pick a reward card, repair and reposition; the next wave starts when everybody
+## Every break the players repair, shop and reposition; the next wave starts when everybody
 ## has pressed ready. Host drives it; the few replicated vars feed every peer's HUD.
 
 enum State { IDLE, BREAK, ACTIVE, VICTORY, GAME_OVER } ## VICTORY is no longer reached (rounds are endless); kept for the end screen
@@ -75,6 +75,7 @@ func start_run() -> void:
 	to_spawn = 0
 	_next_id = 1
 	_clear_break()
+	_clear_offers()
 	state = State.IDLE # force the setter to fire even on a restart from BREAK
 	state = State.BREAK
 
@@ -141,15 +142,15 @@ func _tick_active(delta: float) -> void:
 func _end_wave() -> void:
 	state = State.BREAK
 	_clear_break()
+	var bonus := GameConfig.CASH_WAVE_CLEAR_BASE + GameConfig.CASH_WAVE_CLEAR_STEP * (wave - 1)
+	srv_add_cash(bonus)
+	cl_notice.rpc("Wave %d cleared  +$%d" % [wave, bonus])
 	if GameConfig.RESTORE_ON_WAVE_CLEAR:
 		var idx := 0
 		for p in Net.all_players():
 			if p.status != Player.Status.ALIVE:
 				p.srv_restore(level.player_spawn(idx).origin, p.status == Player.Status.ELIMINATED)
 			idx += 1
-	for p in Net.all_players(): # everybody gets their own three reward cards
-		_offers[p.peer_id] = WeaponCards.roll(p.weapons)
-		_send_offers(p.peer_id, _offers[p.peer_id])
 
 
 func _check_game_over() -> void:
@@ -279,7 +280,7 @@ func _srv_set_ready(peer: int, v: bool) -> void:
 		ready_ids.remove_at(ready_ids.find(peer))
 
 
-## This peer takes card `i` of its offers.
+## This peer takes upgrade card `i` of the cards it is holding.
 func request_pick(i: int) -> void:
 	if multiplayer.is_server():
 		_srv_pick(1, i)
@@ -293,9 +294,45 @@ func srv_pick(i: int) -> void:
 		_srv_pick(multiplayer.get_remote_sender_id(), i)
 
 
+## Host: a player collects what an upgrader machine finished (their weapon, or their gear). Three cards for it; they
+## have already paid at drop-off, so choosing costs nothing - but until they choose, the weapon stays in the machine.
+## Collecting again just brings the same cards back.
+func srv_open_collect(p: Player, gear: bool, weapon_idx: int, machine_index: int) -> void:
+	var held := _offers.get(p.peer_id, []) as Array
+	if not held.is_empty() and int(held[0].get("machine", -1)) == machine_index:
+		_send_offers(p.peer_id, held)
+		return
+	var cards: Array
+	if gear:
+		var levels := {}
+		for i in ArmorCards.KEYS.size():
+			levels[ArmorCards.KEYS[i]] = p.gear_levels[i]
+		cards = ArmorCards.roll(levels)
+	else:
+		cards = WeaponCards.roll_upgrade(p.weapons, weapon_idx)
+	for c in cards:
+		c["cost"] = 0
+		c["gear"] = gear
+		c["machine"] = machine_index
+	_offers[p.peer_id] = cards
+	_send_offers(p.peer_id, cards)
+
+
+## What the next weapon upgrade of weapon `idx` costs this player (paid when the weapon goes into the machine).
+static func weapon_upgrade_cost(p: Player, idx: int) -> int:
+	var spent := 0
+	for k in p.weapons.mods[idx]:
+		spent += int(p.weapons.mods[idx][k])
+	return GameConfig.UPGRADE_BASE + GameConfig.UPGRADE_STEP * spent
+
+
+static func gear_upgrade_cost(p: Player) -> int:
+	return GameConfig.GEAR_BASE + GameConfig.GEAR_STEP * p.gear_level_sum()
+
+
 func _srv_pick(peer: int, i: int) -> void:
 	var p := Net.get_player(peer)
-	if state != State.BREAK or p == null or not _offers.has(peer):
+	if p == null or not _offers.has(peer):
 		return
 	var cards: Array = _offers[peer]
 	if i < 0 or i >= cards.size():
@@ -303,13 +340,15 @@ func _srv_pick(peer: int, i: int) -> void:
 	var card: Dictionary = cards[i]
 	_offers.erase(peer)
 	_send_offers(peer, [])
-	var idx := int(card["w"])
-	if WeaponCards.is_new(card):
-		p.weapons.give_weapon.rpc(idx)
-		p.notify("You got the %s!" % p.weapons.list[idx].display_name)
+	var machine := Interactable.find_by_index(get_tree(), int(card.get("machine", -1)))
+	if machine != null:
+		machine.srv_give_back(p) # the weapon / gear comes out of the machine, upgraded below
+	if bool(card.get("gear", false)):
+		p.srv_apply_gear(StringName(card["mod"]))
+		p.notify("%s upgraded!" % ArmorCards.title(card))
 	else:
-		p.weapons.apply_mod.rpc(idx, StringName(card["mod"]))
-		p.notify(WeaponCards.title(card, p.weapons) + " upgraded!")
+		p.weapons.apply_mod.rpc(int(card["w"]), StringName(card["mod"]))
+		p.notify("%s: %s!" % [p.weapons.list[int(card["w"])].display_name, WeaponCards.title(card)])
 
 
 func _send_offers(peer: int, cards: Array) -> void:
@@ -329,9 +368,13 @@ func _set_offers(cards: Array) -> void:
 	offers_changed.emit()
 
 
-## Leaving a break (or starting a run): nobody is ready any more and unpicked cards are gone.
+## Leaving a break: nobody is ready any more.
 func _clear_break() -> void:
 	ready_ids = PackedInt32Array()
+
+
+## A new run: nobody holds any upgrade cards either.
+func _clear_offers() -> void:
 	_offers.clear()
 	for p in Net.all_players():
 		_send_offers(p.peer_id, [])

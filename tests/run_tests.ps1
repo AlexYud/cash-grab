@@ -25,6 +25,7 @@
     m9   ready button, reward cards, buff effects, endless waves, armor / second wind, team bars, spectator view
     m10  assault rifle / sniper / melee weapons and the ceiling crawler
     nav  navmesh reaches every window and shop spot (single process)
+    bar  crowds at every window: boards only broken where a window is, nobody stuck at a wall or a boarded window
     soak2 / soak4  eight-wave runs with 2 / 4 scripted players at 3x speed (god mode, so bots always finish)
 #>
 param(
@@ -48,10 +49,11 @@ $Tests = [ordered]@{
 	"m5"  = @{ Host = "m5_host"; Clients = @("m5_client"); Limit = 150; Extra = @("--hold-waves") }
 	"m6"  = @{ Host = "m6_host"; Clients = @("m6_client"); Limit = 180; Extra = @("--hold-waves") }
 	"m7"  = @{ Host = "m7_host"; Clients = @("m7_client"); Limit = 240; Extra = @("--hold-waves"); Plain = $true }
-	"m8"  = @{ Host = "m8_host"; Clients = @("m8_client"); Limit = 120; Extra = @("--hold-waves") }
+	"m8"  = @{ Host = "m8_host"; Clients = @("m8_client"); Limit = 160; Extra = @("--hold-waves") }
 	"m9"  = @{ Host = "m9_host"; Clients = @("m9_client"); Limit = 240; Plain = $true } # no --hold-waves: it tests the real ready/wave flow
 	"m10" = @{ Host = "m10_host"; Clients = @("m10_client"); Limit = 200; Extra = @("--hold-waves"); Plain = $true }
 	"nav" = @{ Host = "nav_check"; Clients = @(); Limit = 40; Extra = @("--hold-waves") }
+	"bar" = @{ Host = "barricade_ai"; Clients = @(); Limit = 200; Extra = @("--hold-waves") }
 	"m4d" = @{ Host = "m4d_host"; Clients = @("m4d_client"); Limit = 90; Extra = @("--hold-waves") }
 	"m4c" = @{ Host = "m4c_host"; Clients = @("m4c_filler", "m4c_filler", "m4c_filler", @{ Bot = ""; Delay = 8; Args = @("--expect-join-fail") }); Autostart = 4; Limit = 120; Extra = @("--hold-waves") }
 	# whole 5-wave runs with scripted players (3x game speed); passing means VICTORY with no script errors

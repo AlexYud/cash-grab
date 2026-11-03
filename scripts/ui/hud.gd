@@ -292,7 +292,7 @@ func _update_top() -> void:
 			var line := "READY - waiting for the others (%d/%d)" % [waves.ready_ids.size(), total] if is_ready \
 					else "Repair and reposition  -  press [Enter] when you are ready (%d/%d)" % [waves.ready_ids.size(), total]
 			if not waves.my_offers.is_empty():
-				line = "[Tab] opens your reward cards  -  " + line
+				line = "[Tab] shows your upgrade cards  -  " + line
 			_sub_label.text = line
 			if Net.ui_blocking and not waves.my_offers.is_empty() and Net.local_player != null: # the card screen has its own title
 				_sub_label.text = ""
@@ -300,7 +300,7 @@ func _update_top() -> void:
 				_announce.modulate.a = 0.0
 		WaveManager.State.ACTIVE:
 			_wave_label.text = "WAVE %d" % waves.wave
-			_sub_label.text = "Zombies left: %d" % (waves.enemies_alive + waves.to_spawn)
+			_sub_label.text = "Zombies left: %d" % (waves.enemies_alive + waves.to_spawn) + ("   -   [Tab] shows your upgrade cards" if not waves.my_offers.is_empty() else "")
 		WaveManager.State.VICTORY:
 			_wave_label.text = "VICTORY"
 			_sub_label.text = ""
@@ -360,7 +360,7 @@ func _update_team() -> void:
 		bar.add_theme_stylebox_override("fill", _fill_style(bar_col))
 		var ab: ProgressBar = row["armor"]
 		ab.visible = p.armor > 0
-		ab.value = p.armor / float(GameConfig.ARMOR_MAX)
+		ab.value = p.armor / float(p.armor_cap())
 		(row["txt"] as Label).text = txt
 	for id in _team_rows.keys():
 		if not seen.has(id):

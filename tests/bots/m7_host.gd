@@ -153,7 +153,7 @@ func run() -> void:
 	wm.cash = 100
 	player._apply_teleport(Vector3(10.2, 0.1, -4.8))
 	await wait(0.8)
-	report("L: the lever shows its price", player.prompt_text.contains("$250"), player.prompt_text)
+	report("L: the lever shows its price", player.prompt_text.contains("$%d" % GameConfig.LEVER_COST), player.prompt_text)
 	await _hold_e(2.0)
 	report("L: a lever you cannot afford does nothing", not annex.lever1 and wm.cash == 100, "cash=%d" % wm.cash)
 	wm.cash = 600
@@ -163,14 +163,14 @@ func run() -> void:
 	await wait(2.2) # keeps holding past the hold time: it must not cancel itself
 	player.input.interact_held = false
 	await wait(0.3)
-	report("L: holding E pulls the lever and takes $250", annex.lever1 and wm.cash == 350, "lever=%s cash=%d" % [annex.lever1, wm.cash])
+	report("L: holding E pulls the lever and takes $%d" % GameConfig.LEVER_COST, annex.lever1 and wm.cash == 600 - GameConfig.LEVER_COST,"lever=%s cash=%d" % [annex.lever1, wm.cash])
 	signal_peers("LEVER_PULLED")
 	await wait(0.4)
 	report("L: a pulled lever offers a cancel", player.prompt_text.contains("back"), player.prompt_text)
 	await _hold_e(1.0)
 	report("L: cancelling puts the lever back and refunds", not annex.lever1 and wm.cash == 600, "lever=%s cash=%d" % [annex.lever1, wm.cash])
 	await _hold_e(2.0)
-	report("L: pull it again", annex.lever1 and wm.cash == 350)
+	report("L: pull it again", annex.lever1 and wm.cash == 600 - GameConfig.LEVER_COST)
 	annex.latch_left = 0.6
 	var slipped := await wait_until(func() -> bool: return not annex.lever1, 3.0)
 	report("L: letting the window run out refunds the lever", slipped and wm.cash == 600, "cash=%d" % wm.cash)
@@ -190,7 +190,7 @@ func run() -> void:
 	report("L: one player can walk from the first lever to the second", first and ran and annex.latch_left > 0.0, "t=%.1f" % annex.latch_left)
 	report("L: the second lever prompt is shown", player.prompt_text.contains("second lever"), player.prompt_text)
 	await _hold_e(2.0)
-	report("L: both levers are down and the door starts", annex.lever1 and annex.lever2 and wm.cash == 100, "cash=%d" % wm.cash)
+	report("L: both levers are down and the door starts", annex.lever1 and annex.lever2 and wm.cash == 600 - 2 * GameConfig.LEVER_COST, "cash=%d" % wm.cash)
 	await wait(1.0)
 	report("L: the door animation is running", annex.door_t > 0.1 and not annex.is_open, "t=%.2f" % annex.door_t)
 	var opened := await wait_until(func() -> bool: return annex.is_open, 7.0)
@@ -230,7 +230,7 @@ func run() -> void:
 	player._apply_teleport(Vector3(34.6, 0.1, 3.4))
 	await wait(0.8)
 	await _hold_e(2.0)
-	report("H: the second lever starts the door", hall.lever2 and wm.cash == 0, "cash=%d" % wm.cash)
+	report("H: the second lever starts the door", hall.lever2 and wm.cash == 1000 - 2 * GameConfig.LEVER_COST_STAGE2, "cash=%d" % wm.cash)
 	var hall_open := await wait_until(func() -> bool: return hall.is_open, 7.0)
 	report("H: the hall gate opens after the animation", hall_open and hall.gate.collision_layer == 0)
 	player._apply_teleport(Vector3(34.5, 0.1, 0.0))
@@ -244,7 +244,7 @@ func run() -> void:
 	player._apply_teleport(Vector3(58.2, 0.1, -5.0))
 	wm.cash = 100
 	await wait(0.8)
-	report("M: the box shows its price", player.prompt_text.contains("$400"), player.prompt_text)
+	report("M: the box shows its price", player.prompt_text.contains("$%d" % GameConfig.BOX_COST), player.prompt_text)
 	await _hold_e(1.6)
 	report("M: too poor for the box", wm.cash == 100)
 	wm.cash = 1000
